@@ -24,21 +24,11 @@ case ${1:-offline} in
     cmake --build "$BUILD_ROOT/native" -j "$JOBS"
     ;;
   sunshine)
-    SRC="$ROOT/vendor/sunshine"
-    # Must already have a reviewed/generated overlay, rather than a stock desktop binary.
-    test -f "$SRC/src/rkmoon/rkmoon_bridge.cpp"
-    test "$(git -C "$SRC" rev-parse HEAD)" = 63d35f702ee9e362e43263742981836ec0710384
-    cmake -S "$SRC" -B "$BUILD_ROOT/sunshine" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-      -DBUILD_DOCS=OFF -DBUILD_TESTS=OFF -DSUNSHINE_ENABLE_TRAY=OFF \
-      -DSUNSHINE_ENABLE_CUDA=OFF -DCUDA_FAIL_ON_MISSING=OFF -DBOOST_USE_STATIC=OFF \
-      -DSUNSHINE_ENABLE_DRM=OFF -DSUNSHINE_ENABLE_VAAPI=OFF -DSUNSHINE_ENABLE_VULKAN=OFF \
-      -DSUNSHINE_ENABLE_WAYLAND=OFF -DSUNSHINE_ENABLE_X11=OFF \
-      -DSUNSHINE_ENABLE_KWIN=OFF -DSUNSHINE_ENABLE_PORTAL=OFF \
-      -DSUNSHINE_ASSETS_DIR_DEF="$BUILD_ROOT/sunshine/assets" \
-      -DCMAKE_INSTALL_PREFIX="$PREFIX/sunshine" "${@:2}"
-    cmake --build "$BUILD_ROOT/sunshine" --target sunshine -j "$JOBS"
-    # Do not run upstream cmake --install: it can include system integration/permissions.
-    echo "Dedicated binary: $BUILD_ROOT/sunshine/rkmoon-kvm. No web-ui target; do not install over old Sunshine."
+    cmake -S "$ROOT" -B "$BUILD_ROOT/server" -G Ninja \
+      -DRKMOON_SERVER=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "${@:2}"
+    cmake --build "$BUILD_ROOT/server" --target rkmoon-kvm -j "$JOBS"
+    echo "Dedicated binary: $BUILD_ROOT/server/rkmoon-kvm; only the private build directory was modified."
     ;;
-  *) echo 'Usage: tools/build.sh offline|mpp|sunshine [additional Sunshine -D options]' >&2;exit 2;;
+  *) echo 'Usage: tools/build.sh offline|mpp|sunshine [additional server -D options]' >&2;exit 2;;
 esac

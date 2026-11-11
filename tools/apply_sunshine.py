@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Commit-locked, fail-closed Sunshine source overlay. Default operation is a dry run."""
-import argparse
-import difflib
-import hashlib
-import json
-import os
+"""Commit-locked, fail-closed transformations for the copied protocol subset."""
 import re
 from pathlib import Path
-import shutil
 import subprocess
-import tempfile
 
 PIN="63d35f702ee9e362e43263742981836ec0710384"
 ROOT=Path(__file__).resolve().parents[1]
@@ -37,18 +30,11 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/video.h", "src/rtsp.h", "cmake/compile_definitions/linux.cmake"}:
+        if path not in {"src/logging.cpp", "src/thread_safe.h", "src/rtsp.h"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
-        if path=="src/video.h":
-            anchor="    int enableIntraRefresh;  ///< Intra refresh setting: 0 = disabled, 1 = enabled.\n"
-            text=once(text,anchor,anchor+"    bool rkmoon_absolute_mouse = false;\n")
-        elif path=="src/rtsp.h":
+        if path=="src/rtsp.h":
             anchor="    std::string client_cert;  ///< PEM certificate for the paired Moonlight client.\n"
             text=once(text,anchor,anchor+"    bool rkmoon_absolute_mouse = false;\n")
-        elif path=="src/video.cpp":
-            text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
-                "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::capture(std::move(mail), config, channel_data); return; }\n")
-            text=at_entry(text,"  int probe_encoders()", "    if (rkmoon_sunshine::enabled()) { return rkmoon_sunshine::probe(); }\n")
         elif path=="src/input.cpp":
             text=once(text,"    task_pool.pushDelayed([]() {\n      platf::move_mouse(platf_input, 1, 1);","    task_pool.pushDelayed([]() {\n      if (rkmoon_sunshine::enabled()) return; // HDMI needs no desktop cursor wake; preserve selected USB mode.\n      platf::move_mouse(platf_input, 1, 1);")
             text=at_entry(text,"  void print(void *payload)",
@@ -75,9 +61,16 @@ def make_changes(original):
                 '    if (rkmoon_sunshine::enabled()) { auto base = fs::path(lizardbyte::common::get_env("XDG_CONFIG_HOME")); return base.is_absolute() ? base / "sunshine" : fs::path("/nonexistent/rkmoon-private-state-required"); } // Never migrate an installed Sunshine state.\n')
             text=at_entry(text,"  std::unique_ptr<deinit_t> init()",
                 "    if (rkmoon_sunshine::enabled()) { return std::make_unique<deinit_t>(); } // No EGL/desktop capture initialization.\n")
-        elif path=="src/audio.cpp":
-            text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
-                "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
+        elif path=="src/logging.cpp":
+            text=once(text, '#else\n  #include <display_device/logging.h>\n', '')
+            text=once(text, 'extern "C" {\n#include <libavutil/log.h>\n}\n', '')
+            text=once(text, '#ifndef __ANDROID__\n    setup_av_logging(min_log_level);\n    setup_libdisplaydevice_logging(min_log_level);\n#endif\n', '')
+            begin=text.index('#ifndef __ANDROID__\n  void setup_av_logging(')
+            end=text.index('\n  void log_flush()',begin)
+            removed=text[begin:end]
+            if removed.count('setup_av_logging(')!=1 or removed.count('setup_libdisplaydevice_logging(')!=1:
+                raise PatchError('logging integration anchor count changed')
+            text=once(text,removed,'')
         elif path=="src/stream.cpp":
             text=once(text,'        << util::hex_vec(payload) << std::endl',
                 '        << "[RKMoon control payload redacted]" << std::endl')
@@ -120,99 +113,13 @@ def make_changes(original):
 
 """
             text=once(text,anchor,methods+anchor)
-        elif path=="cmake/compile_definitions/linux.cmake":
-            text=once(text,"if(NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}",
-                "if(NOT RKMOON_MINIMAL_BUILD AND NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}")
-        elif path=="cmake/targets/common.cmake":
-            start=text.index("#WebUI build\n")
-            end=text.index("# docs\n",start)
-            text=text[:start]+"# No NPM/Web UI target in this dedicated build.\n\n"+text[end:]
-        elif path=="CMakeLists.txt":
-            text=once(text,"# setup compile definitions\n", "set(RKMOON_MINIMAL_BUILD ON) # Explicit external HDMI/MPP path; no desktop capture backend.\nset(SUNSHINE_ASSETS_DIR_DEF assets) # Main anchors cwd to this binary directory.\n# setup compile definitions\n")
-            text=once(text,"# target definitions\n",'''# Only the GameStream host and RTSP network service; no Web UI, UPnP or desktop entrypoint.
-list(REMOVE_ITEM SUNSHINE_TARGET_FILES
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/confighttp.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/upnp.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/nvhttp.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/httpcommon.cpp")
-list(APPEND SUNSHINE_TARGET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_main.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_http.cpp")
-# target definitions
-''')
-            text+='''
-# RKMoon dedicated HDMI build. Do not install over a pre-existing Sunshine.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  message(FATAL_ERROR "RKMoon overlay requires Linux")
-endif()
-target_sources(sunshine PRIVATE
-  src/rkmoon/rkmoon_bridge.cpp
-  src/rkmoon/rkmoon_audio.cpp
-  src/rkmoon/core.cpp
-  src/rkmoon/annexb.cpp
-  src/rkmoon/hid_client.cpp)
-target_include_directories(sunshine PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/include")
-find_library(RKMOON_ALSA_LIB asound REQUIRED)
-target_link_libraries(sunshine "${RKMOON_ALSA_LIB}")
-set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
-# Only compatibility defaults/artwork, never the Web UI tree.
-file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/assets")
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/hdmi-apps.json"
-  "${CMAKE_CURRENT_BINARY_DIR}/assets/apps.json" COPYONLY)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src_assets/common/assets/box.png"
-  "${CMAKE_CURRENT_BINARY_DIR}/assets/box.png" COPYONLY)
-'''
         else:
             raise PatchError("unexpected source file")
         changes[path]=text
     return changes
 
-FILES=["src/video.h","src/rtsp.h","src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
-
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("repository",type=Path)
-    parser.add_argument("--apply",action="store_true",help="explicitly modify only this independent pinned Sunshine checkout")
-    parser.add_argument("--patch-output",type=Path,help="optional generated unified diff path")
-    args=parser.parse_args();repo=args.repository.resolve()
-    if git(repo,"rev-parse","HEAD") != PIN:
-        raise PatchError("Sunshine HEAD does not match the audited pin")
-    if git(repo,"status","--porcelain"):
-        raise PatchError("checkout is not clean; use a new independent clone, never overwrite local work")
-    original={p:(repo/p).read_text() for p in FILES}
-    changes=make_changes(original)
-    diff="".join("".join(difflib.unified_diff(original[p].splitlines(True),changes[p].splitlines(True),fromfile="a/"+p,tofile="b/"+p)) for p in FILES)
-    if args.patch_output:
-        args.patch_output.write_text(diff)
-    if args.apply:
-        if (repo/"src/rkmoon").exists():raise PatchError("overlay directory already exists")
-        # Stage every payload before altering original files. Roll back source files on any write failure.
-        stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
-        try:
-            payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_http.cpp","rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_audio_pcm.hpp","rkmoon_password.hpp","rkmoon_display.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
-            for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
-            shutil.copy2(ROOT/"config/hdmi-apps.json",payload/"hdmi-apps.json")
-            shutil.copytree(ROOT/"include",payload/"include")
-            shutil.copy2(ROOT/"LICENSE",payload/"LICENSE")
-            try:
-                for p,s in changes.items():
-                    tmp=repo/(p+".rkmoon-new");tmp.write_text(s);os.replace(tmp,repo/p)
-                shutil.move(str(payload),repo/"src/rkmoon")
-            except BaseException:
-                for p,s in original.items():(repo/p).write_text(s)
-                shutil.rmtree(repo/"src/rkmoon",ignore_errors=True)
-                raise
-        finally:shutil.rmtree(stage,ignore_errors=True)
-    print(json.dumps({"commit":PIN,"operation":"applied" if args.apply else "check-only", "changed_files":len(FILES),
-                      "patch_sha256":hashlib.sha256(diff.encode()).hexdigest(),"patch_lines":len(diff.splitlines())},indent=2))
-
 if __name__=="__main__":
-    try:main()
-    except (PatchError,subprocess.CalledProcessError,OSError) as e:
-        raise SystemExit(f"Patch refused: {e}")
+    raise SystemExit("Use tools/prepare_sunshine.py to copy the pinned subset; in-place overlays are retired")

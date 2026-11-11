@@ -4,7 +4,6 @@
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #include "src/config.h"
 #include "src/display_device.h"
-#include "src/file_handler.h"
 #include "src/globals.h"
 #include "src/httpcommon.h"
 #include "src/logging.h"
@@ -55,8 +54,6 @@ int init() {
     return -1;
   }
 }
-// Retained entry_handler object references this unused Web UI operation.
-int save_user_creds(const std::string &, const std::string &, const std::string &, bool) { return -1; }
 }
 namespace nvhttp {
 namespace pt = boost::property_tree;

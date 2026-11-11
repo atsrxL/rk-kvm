@@ -7,7 +7,7 @@ librockchip_mpp, the private runtime-library directory and the HDMI-RX codec mod
 Repository files (Python HID bridge, supervisor, systemd units, EDID) are copied from this
 checkout. The result installs with: sudo python3 tools/install_server.py --release DIR.
 """
-import argparse, hashlib, json, os, shutil, subprocess, tarfile, time
+import argparse, hashlib, json, os, shutil, subprocess, re, tarfile, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +33,32 @@ def commit():
         return 'unknown'
 
 
+def needed(binary):
+    text = subprocess.check_output(['readelf', '-d', str(binary)], text=True)
+    return re.findall(r'\(NEEDED\).*?\[([^]]+)\]', text)
+
+
+def forbidden_library(name):
+    return name.lower().startswith(('libavcodec','libavdevice','libavfilter','libavformat','libavutil',
+        'libswscale','libswresample','libcurl','libminiupnpc','libpulse','libegl')) or name.startswith(('libGL','libOpenGL','libGLES'))
+
+
+def runtime_closure(roots, directory):
+    """Copy only reachable supplied libraries; system libraries remain system dependencies."""
+    result, seen, pending = {}, set(), list(roots)
+    while pending:
+        binary = pending.pop()
+        if binary.resolve() in seen:continue
+        seen.add(binary.resolve())
+        for name in needed(binary):
+            if forbidden_library(name):raise ValueError('Forbidden server dependency: '+name)
+            candidate = directory / name
+            if candidate.is_file() and name not in result:
+                result[name] = candidate
+                pending.append(candidate)
+    return result
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--server', required=True, type=Path, help='built rkmoon-kvm')
@@ -46,6 +72,7 @@ def main():
     p.add_argument('--output', required=True, type=Path, help='parent directory for the release')
     a = p.parse_args()
 
+    libraries = runtime_closure([a.server, a.worker, a.mpp_lib], a.runtime_libs)
     version = a.version or time.strftime('%Y%m%d-%H%M') + '-' + commit()
     out = a.output / ('rkmoon-server-' + version)
     if out.exists():
@@ -57,9 +84,8 @@ def main():
     shutil.copy2(a.worker, out / 'bin/rkmoon-worker')
     for name in ['apps.json', 'box.png']:
         shutil.copy2(a.assets / name, out / 'bin/assets' / name)
-    for lib in sorted(a.runtime_libs.iterdir()):
-        if '.so' in lib.name and lib.is_file():
-            shutil.copy2(lib, out / 'lib' / lib.name, follow_symlinks=True)
+    for name, lib in sorted(libraries.items()):
+        shutil.copy2(lib, out / 'lib' / name, follow_symlinks=True)
     shutil.copy2(a.mpp_lib, out / 'lib/librockchip_mpp.so.1', follow_symlinks=True)
     shutil.copy2(a.codec_ko, out / 'kernel/rkmoon_hdmirx_codec.ko')
     shutil.copytree(ROOT / 'python/rkmoon_hid', out / 'python/rkmoon_hid',
@@ -80,7 +106,7 @@ def main():
             f.chmod(0o755 if f.parent.name in {'bin', 'tools'} else 0o644)
 
     files = {str(f.relative_to(out)): sha(f) for f in sorted(out.rglob('*')) if f.is_file()}
-    manifest = {'version': version, 'source_commit': commit(), 'files': files}
+    manifest = {'version': version, 'source_commit': commit(), 'server_needed': needed(a.server), 'files': files}
     (out / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n')
     archive = out.with_name(out.name + '.tar.gz')
     with tarfile.open(archive, 'w:gz') as t:

@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 2026-11-12 ADR-014 阶段2完成：自有 RKMOON_SERVER 目标/只读固定源码子集/模块替身，旧 Sunshine CMake 与就地 overlay 退役。VM301 ARM64/QEMU 完整链接、CTest31/31、Python115项（2跳过）、密码启动/音频6场景/21字段对比通过；合成 launch→OPTIONS/DESCRIBE 返回200，未走媒体/加密RTSP/resume。NEEDED14→11，NEEDED+ldd无FFmpeg/curl/miniupnpc/pulse/EGL/GL；阶段3/4未做，未访问T6。见 [验收表](docs/ACCEPTANCE.md)。
+
 > 2026-11-12 ADR-014 阶段 1 完成：自有六路由 HTTP、可热更的私有密码文件及稳定身份。VM301 ARM64/QEMU 完整链接、离线 CTest31/31 + Python114项（2跳过）、专项与模拟启动通过；新旧 serverinfo 两种鼠标能力下21字段逐值一致。首次 worktree 环境失败后获授权以全新克隆完成。未访问 T6，未交付 Windows，阶段2/3/4未实施。见 [验收表](docs/ACCEPTANCE.md)。
 
 > 2026-11-11 规划：服务端改为只抽取 Sunshine 的串流、握手与输入解包，其余（HTTP/认证、编码框架、配置、平台层）由本仓库薄实现替换，分四阶段，尚未实施。见 [ADR-014](docs/ADR-014-sunshine-extraction.md)。

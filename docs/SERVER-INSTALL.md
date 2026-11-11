@@ -26,10 +26,12 @@ T6 上的服务端以一个自包含的发布目录运行，由 systemd 开机�
 在已有构建产物的机器上（产物来源见 docs/BUILD.md）：
 
     python3 tools/package_server.py \
-      --server build/sunshine/rkmoon-kvm --assets build/sunshine/assets \
+      --server build/server/rkmoon-kvm --assets build/server/assets \
       --worker build/native/rkmoon-worker --mpp-lib local/mpp/lib/librockchip_mpp.so.0 \
       --runtime-libs DIR_OF_PRIVATE_LIBS --codec-ko rkmoon_hdmirx_codec.ko \
-      --licenses DIR_OF_LICENSES --output OUT_DIR [--version NAME]
+      --licenses build/server/protocol/licenses --output OUT_DIR [--version NAME]
+
+打包器通过 readelf 读取实际 DT_NEEDED，从 --runtime-libs 目录递归选取可达私有库，不复制其中未使用的旧库；遇 FFmpeg/curl/miniupnpc/PulseAudio/EGL/GL 依赖则拒绝。系统库可由目标系统提供；私有库目录必须按目标架构准备并核对 ldd，无需旧 Sunshine 依赖目录。另需随发布保留 Boost/OpenSSL/Opus/ALSA 及平台库的适用许可证（例如合并到 --licenses 目录）。本阶段仅改构建和打包，不执行以下安装命令。
 
 输出 OUT_DIR/rkmoon-server-VERSION/ 和同名 .tar.gz，MANIFEST.json 记录每个文件的 SHA256。
 

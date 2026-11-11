@@ -1,5 +1,7 @@
 # 给本地 Codex 的执行入口
 
+> 2026-11-12：ADR-014阶段2自有构建已通过 VM301 ARM64/QEMU 完整链接、离线与有限模拟验收；旧 Sunshine CMake/就地overlay退役，真实媒体和设备验收未执行。详见 [验收表](docs/ACCEPTANCE.md)。
+
 > 最新要求：HTTP＋密码，取消HTTPS/证书验证；默认密码 `kvm`，Windows为主要客户端。此条取代下文旧TLS/TOFU要求，见 [ADR-005](docs/ADR-005-http-password.md)。
 
 > 2026-09-24：按用户要求改为 IP＋密码（初版 `kvm`），取消 PIN/pair 和客户端证书登记授权。TLS/输入加密保留；旧配对说明及旧实机通过记录不代表新认证验收。见 [认证决策](docs/ADR-004-password-auth.md)。新版本尚未部署到设备。
@@ -17,10 +19,8 @@
 ```bash
 ./tools/build.sh offline
 python3 tools/fetch_sources.py
-python3 tools/apply_sunshine.py vendor/sunshine \
-  --patch-output /tmp/rkmoon-sunshine-review.patch
-# 审阅 diff 和下列入口后，只向独立 checkout 应用：
-python3 tools/apply_sunshine.py vendor/sunshine --apply
+python3 tools/prepare_sunshine.py vendor/sunshine
+# 干净固定源码以只读方式拷贝到自有构建目录，不再就地打 overlay：
 ./tools/build.sh mpp
 ./tools/build.sh sunshine
 ```

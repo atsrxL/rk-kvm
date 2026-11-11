@@ -1,6 +1,6 @@
 # ADR-014：只抽取 Sunshine 的串流与输入模块
 
-状态：阶段 1 完成（2026-11-12，离线/编译/模拟启动验收）；阶段 2/3/4 未实施。行数与依赖来自对固定提交 `63d35f7` 的静态统计；后续阶段的依赖裁剪仍未经编译验证。
+状态：阶段1、阶段2完成（2026-11-12，离线/ARM64编译/模拟验收）；阶段3/4未实施。后续平台裁剪及真实媒体/输入仍需独立验收。
 
 ## 问题
 
@@ -77,6 +77,8 @@
 - 完成标准：`serverinfo` 字段与现有输出逐项一致（含 `RKMoonAuth=password-http-v1`、`RKMoonDisplay*`、`RKMoonMouseModes`、`HttpsPort=0`、`PairStatus=1`）；`tools/test_minimal_startup.py`、`tests/test_password_auth.py`、`tests/test_log_redaction.py`、`tests/test_overlay.py` 通过；新增“修改密码后旧密码被拒”的检查。
 
 ### 阶段 2：自有构建与模块替身
+
+当前状态：完成（2026-11-12）。自有 CMake 可选目标默认OFF，只读拷贝固定源码与替身头并列；旧就地 overlay/CMake 路径已删除。VM301 ARM64/QEMU 完整链接、offline（31 CTest +115 Python、2内核fixture跳过）、阶段1回归、生产音频对象六个合成循环与21字段双配置对比通过。配置34键名机械核对无额外键；7个保留协议/平台补丁与已验收阶段1逐字节一致。直接NEEDED14→11，完整ldd也无禁用依赖。额外合成 launch→OPTIONS/DESCRIBE200、cancel及独占通过；未测试resume、加密RTSP、ANNOUNCE/SETUP/PLAY、真实媒体/输入。首次编译缺项和生成目录校验顺序回归已定位修复，证据均保留，详见 ACCEPTANCE。
 
 - 新增拷贝脚本与本仓库 CMake 目标；提供 `video`、`audio`、`config`、`process`、`display_device`、`system_tray` 的替身头文件和实现。
 - 平台层暂时整文件保留 `misc.cpp`，只删 `graphics.cpp`、`audio.cpp`、`publish.cpp`。

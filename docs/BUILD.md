@@ -1,10 +1,12 @@
 # 构建、硬件前置与固定依赖
 
+> 2026-11-12：ADR-014阶段2自有构建已通过 VM301 ARM64/QEMU 完整链接、离线与有限模拟验收；旧 Sunshine CMake/就地overlay退役，真实媒体和设备验收未执行。详见 [验收表](ACCEPTANCE.md)。
+
 > 2026-09-23 本地更新：完整 Sunshine 与真实 MPP worker 已在 Linux amd64 编译链接通过；25 原生、69 Python/联合、25 sanitizer 测试通过。目标 ARM64/P1/P2/P3 仍未测试。最新结果见 [构建记录](../results/20260923-build/STATUS.md)。下文原交接记录保留供追溯。
 
 ## 0. 环境
 
-独立组件要求 Linux、CMake≥3.20、C++17、Python≥3.10、pthread、Linux UAPI。专用 Sunshine 固定源码要求 **CMake≥3.24、C++23**，以及其自身图形/FFmpeg/Boost/OpenSSL/Opus/前端等依赖。不要把系统旧编译器一定可用作为假设。[S1/S2]
+独立组件要求 Linux、CMake≥3.20、C++17、Python≥3.10、pthread、Linux UAPI。专用服务端要求 **CMake≥3.24、Ninja、C++23**。自有构建仅保留固定 Sunshine 网络/输入源码，依赖 OpenSSL、Boost≥1.87（含 Endian、Format、Property Tree）、Opus、ALSA；阶段2暂保留完整 Linux misc/虚拟HID层，因此还需要 GIO、libevdev、libcap。无需 FFmpeg、curl、miniupnpc、PulseAudio、EGL/GL、npm。不要把系统旧编译器一定可用作为假设。[S1/S2]
 
 本次云端：x86_64、GNU g++14.2.0、CMake3.31.6；没有MPP SDK/板卡。SDK源码和Sunshine完整构建未通过。以下是可执行构建流程，不是已在目标板成功的记录。
 
@@ -28,7 +30,7 @@ ctest --test-dir build/asan --output-on-failure
 python3 tools/fetch_sources.py
 ```
 
-只新建vendor/mpp、vendor/sunshine；遇已有目录拒绝，不reset、不清工作树。Git子模块跟随固定Sunshine gitlink。上游 CMake CPM/package-lock、npm/OS依赖仍需记录，不保证所有网络下载永不变化或逐字节可重现。
+只新建vendor/mpp、vendor/sunshine；遇已有目录拒绝，不reset、不清工作树。Git子模块跟随固定Sunshine gitlink。不再运行 Sunshine CMake 或下载其 CPM/FFmpeg/WebUI 依赖；子模块跟随固定 gitlink。Boost 可使用系统开发包或显式指定已有源码目录；OS/编译器包版本仍需记录。
 
 ## 3. MPP 私有构建与原生worker
 
@@ -43,18 +45,41 @@ ldd build/native/rkmoon-worker
 
 MPP的动态库路径若未由build rpath解决，只给本实例设置私有LD_LIBRARY_PATH；不要全局写`/etc/ld.so.conf`。特别检查旧KVM仍加载原来的库。
 
-## 4. 生成并应用固定 Sunshine 模块补丁（最小服务分支）
+## 4. 自有服务端构建（ADR-014 阶段2）
 
 ```bash
-python3 tools/apply_sunshine.py vendor/sunshine --patch-output /tmp/rkmoon-sunshine.patch
-# 默认不修改。审阅全部diff：
-python3 tools/apply_sunshine.py vendor/sunshine --apply
+# 只读核对固定 HEAD、干净状态、子模块和唯一补丁锚点；不写 vendor：
+python3 tools/prepare_sunshine.py vendor/sunshine
 ./tools/build.sh sunshine
+# 等价入口（不会调用 Sunshine 自身 CMake）：
+cmake -S . -B build/server -G Ninja -DRKMOON_SERVER=ON -DBUILD_TESTING=OFF
+cmake --build build/server --target rkmoon-kvm -j2
 ```
 
-补丁要求固定HEAD、干净工作树、唯一源码锚点。应用一次后重复执行会因脏树拒绝，这是保护，不应绕过。完整上游下载/打补丁/链接在本次云端没有执行成功。若固定版本签名、queue类型、目标名或依赖造成失败，先记录准确错误并修小范围适配/测试，再继续。
+`RKMOON_SERVER` 默认 OFF，offline/mpp 目标保持独立。源码子集与替身头位于 `build/server/protocol/src`，相对包含总是命中该目录中的薄实现；`rkmoon-source-manifest.json` 记录固定提交和每个文件的 SHA256。拷贝脚本不修改 upstream，拒绝脏树、不同提交/子模块及缺失/重复补丁锚点。重新配置可刷新本工具生成且校验值未被手工修改的目录；有未知文件或手工编辑则拒绝覆盖。
 
-最小服务分支产物是 `build/sunshine/rkmoon-kvm`，构建不需要 WebUI/npm，不启动上游桌面入口，不监听 WebUI 管理端口；仍需要固定 Sunshine 子模块、Linux 开发包与原 GameStream 网络协议模块。`libasound2-dev` 是新增的专用音频开发依赖；构建配置关闭桌面/DRM/VAAPI/Vulkan/CUDA 等采集编码路线，不会增加 CPU 视频编码兜底。二进制旁只打包 `assets/apps.json`（自有固定 HDMI/no-command JSON）与 `assets/box.png`（固定 Sunshine 上游图标，随包保留上游 LICENSE/NOTICE），不打包上游包含 Steam/xrandr 命令的 Linux apps.json，也不打包 Web 树。main 要求绝对配置路径和用户自有0700 HOME/XDG_CONFIG_HOME，通过 `/proc/self/exe` 定位并核验两个资产后切cwd到binary目录；缺资产/目录权限/路径错误拒绝启动。私有state和日志继续由绝对XDG路径解析，overlay阻止已安装Sunshine的自动state迁移。不运行上游 `cmake --install`；本包从独立 build 目录运行，运行前 `tools/run.py` 核验专用 marker。实际编译/运行证据以 `docs/ACCEPTANCE.md` 单列为准。
+既有 vendor 若是旧 overlay 脏树，不要 reset 或清理用户工作。改用远端独立、干净的固定克隆，例如：
+
+```bash
+./tools/build.sh sunshine -DRKMOON_SUNSHINE_SOURCE=/absolute/clean/Sunshine
+# 已有模块化 Boost 源码可复用；不隐式下载或改系统：
+./tools/build.sh sunshine -DRKMOON_SUNSHINE_SOURCE=/absolute/clean/Sunshine \
+  -DRKMOON_BOOST_SOURCE=/absolute/boost-source
+```
+
+产物为 `build/server/rkmoon-kvm`，旁边保留 `assets/apps.json` 与固定上游 `assets/box.png`，许可文件在 `build/server/protocol/licenses`。`tools/build.sh sunshine` 只是现有命令名，内部唯一构建路径是本仓库目标；`apply_sunshine.py` 只作为只读变换模块使用，原就地 --apply/CMake overlay 路径已退役。
+
+main 继续要求普通用户、绝对配置路径、本人0700 HOME/XDG_CONFIG_HOME，并核验二进制旁两个资产。只支持固定 HDMI 应用，不执行 apps/prep 命令、不启用桌面抓屏或软件编码、不生成证书或开放 WebUI。HTTP 状态/密码约定见 README/SECURITY。配置沿用上游同名键与默认值；只接受专用保留子集，移除的桌面编码、证书/WebUI 等选项会被拒绝且不记录值。默认值/键名审计命令：
+
+```bash
+python3 tools/audit_server_config.py /absolute/clean/Sunshine --output config-key-audit.json
+readelf -d build/server/rkmoon-kvm
+ldd build/server/rkmoon-kvm
+python3 tools/test_minimal_startup.py --binary build/server/rkmoon-kvm --output PRIVATE_OUT
+python3 tools/test_audio_loop.py --build build/server --output PRIVATE_AUDIO_OUT
+```
+
+启动验证在隔离容器中以非root运行，音频工具使用 ALSA null/注入状态，均不能作为真实 HDMI、MPP 或客户端验收。链接清单应不含 libav*/libsw*、curl、miniupnpc、pulse、EGL/GL；原动态依赖与新依赖的对比单独留证。不得运行 Sunshine 的安装流程或覆盖旧服务。当前实际测试状态见 ACCEPTANCE。
 
 ## 5. 设备权限
 

@@ -8,6 +8,8 @@
 
 ## 当前验证状态
 
+2026-11-12：ADR-014阶段2自有构建已通过 VM301 ARM64/QEMU 完整链接、离线与有限模拟验收；旧 Sunshine CMake/就地overlay退役，真实媒体和设备验收未执行。详见 [验收表](docs/ACCEPTANCE.md)。 下列2026-09记录为历史基线。
+
 2026-09-24 密码认证版本已完成 ARM64 Linux完整构建、非root真实HTTPS认证与重启身份回归（模拟worker，无媒体流）；见 [本次验证记录](results/20260924-password/STATUS.md)。尚未部署到T6。
 
 最小服务端冻结 **912613c** 已完成 ARM64 QEMU 完整链接、25原生+87工具/联合测试、合成音频loop与无Web启动检查；[runtime/hash及边界](results/20260923-minimal/STATUS.md)。真实HDMI声音/定制客户端验收未完成，不能使用合成测试替代。
@@ -29,14 +31,12 @@
 # Linux；不打开 HDMI、不写 HID
 ./tools/build.sh offline
 python3 tools/fetch_sources.py
-python3 tools/apply_sunshine.py vendor/sunshine --patch-output /tmp/review.patch
-# 审阅后在独立 checkout 应用
-python3 tools/apply_sunshine.py vendor/sunshine --apply
+python3 tools/prepare_sunshine.py vendor/sunshine
 ./tools/build.sh mpp
-./tools/build.sh sunshine -DGLAD_SKIP_PIP_INSTALL=ON
+./tools/build.sh sunshine
 ```
 
-构建输出为独立 `build/sunshine/rkmoon-kvm`（不生成 Web UI，不需 npm）。启动配置默认不授权采集、输入/声音关闭。要采集被控机声音，先只读确认 T6 ALSA 的真实 HDMI 录音设备，再配置 `audio.enabled=true` 与显式 `alsa_device=hw:...`（必要时经审核使用可能转换采样率的 `plughw:`）。连接使用定制客户端的 IP＋密码，初版默认密码 `kvm`；无需 PIN 配对或本地审批。控制接口直接使用HTTP，无HTTPS、证书或配对步骤。原版 Moonlight 不兼容此认证方式，详见 [认证 ADR](docs/ADR-004-password-auth.md)。运行需普通用户的特定视频/MPP/DMA/ALSA 设备权限及独占采集窗口，不应与旧 KVM 抢占节点；需保留私有 assets 与运行库。
+构建输出为独立 `build/server/rkmoon-kvm`（不生成 Web UI，不需 npm）。启动配置默认不授权采集、输入/声音关闭。要采集被控机声音，先只读确认 T6 ALSA 的真实 HDMI 录音设备，再配置 `audio.enabled=true` 与显式 `alsa_device=hw:...`（必要时经审核使用可能转换采样率的 `plughw:`）。连接使用定制客户端的 IP＋密码，初版默认密码 `kvm`；无需 PIN 配对或本地审批。控制接口直接使用HTTP，无HTTPS、证书或配对步骤。原版 Moonlight 不兼容此认证方式，详见 [认证 ADR](docs/ADR-004-password-auth.md)。运行需普通用户的特定视频/MPP/DMA/ALSA 设备权限及独占采集窗口，不应与旧 KVM 抢占节点；需保留私有 assets 与运行库。
 
 ## 范围与证据
 

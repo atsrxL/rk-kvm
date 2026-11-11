@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Link a synthetic audio-loop fixture from a completed Ninja Sunshine build.
+"""Link a synthetic audio-loop fixture from a completed Ninja dedicated-server build.
 No real audio device/video/USB is opened. Uses ALSA null + injected xrun/ring status.
 """
 import argparse
@@ -26,12 +26,14 @@ def main():
     cmd[cmd.index('-o')+1]=str(obj)
     cmd[cmd.index('-c')+1]=str(root/'tests/sunshine_audio_fixture.cpp')
     subprocess.run(cmd,cwd=build,check=True)
-    commands=subprocess.check_output(['ninja','-t','commands','sunshine'],cwd=build,text=True).splitlines()
+    commands=subprocess.check_output(['ninja','-t','commands','rkmoon-kvm'],cwd=build,text=True).splitlines()
     link=[line for line in commands if ' -o rkmoon-kvm ' in line]
     if len(link)!=1:raise SystemExit('expected exactly one dedicated host link command')
     args=shlex.split(link[0])
     if args[:2]!=[':','&&'] or args[-2:]!=['&&',':']:raise SystemExit('unknown Ninja link command wrapper')
     args=args[2:-2]
+    # Newer CMake/GNU ld writes a dependency file; keep fixture output out of the server tree.
+    args=[('-Wl,--dependency-file='+str(out/'fixture-link.d')) if x.startswith('-Wl,--dependency-file=') else x for x in args]
     if args.count(original_object)!=1:raise SystemExit('main object must appear exactly once')
     args[args.index(original_object)]=str(obj)
     args[args.index('-o')+1]=str(binary)

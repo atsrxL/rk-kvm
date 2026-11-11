@@ -182,3 +182,36 @@
 密码路径及格式见 README/SECURITY 的“服务端密码文件”；状态目录 `http-password`，本人所有、普通文件、0600。HTTP 每请求重新读取，保留原失败预算与输入加密。会话构造从旧 overlay 提取，保留 key/IV、音频参数、corever 与鼠标模式、独占/cancel 路径；没有重写 RTSP/RTP/FEC。
 
 脱敏比较与摘要：`private/results/local/adr014/serverinfo-comparison.json`、`STATUS.md`。完整构建/测试日志及新旧二进制保存在 VM301 `/root/artifacts/rk-kvm-adr014-20261111/resume-20261112/`，不将真实请求、密码或查询写入日志。
+
+## ADR-014 阶段2：自有构建与模块替身（2026-11-12）
+
+本阶段完成；阶段3/4未实施。不访问 T6/设备、不改 client/firmware/worker/python、不交付 Windows。构建和测试均在 MS-A2 VM301 amd64 客体的 ARM64/QEMU 容器中进行；不能称为 ARM64 实机或媒体流验收。
+
+| 检查 | 状态 | 证据与边界 |
+|---|---|---|
+| 自有构建与源码隔离 | 通过（编译） | RKMOON_SERVER 默认OFF，tools/build.sh sunshine 唯一转至本仓库 build/server；不运行 Sunshine CMake 或就地 --apply。干净固定 HEAD63d35f7、子模块及唯一锚点检查，生成协议源码/替身头/逐文件SHA256清单，输入克隆始终干净 |
+| ARM64 完整链接 | 通过（仅编译） | gcc14.2、Ninja；新 binary SHA256 `3b3f36c698e91abfe3cbdeb6a6e3201ed25f9267d2e36ad86fcbc8e93373094d`。保留完整 misc.cpp 与虚拟HID层；不编译 graphics/audio/publish/video/config/process 等旧实现 |
+| 保留补丁 | 通过（机械比较） | stream/rtsp/input/rtsp.h/thread_safe.h/misc/virtualhid 共7文件的变换结果与阶段1提交6cbb3c8逐字节一致；新增 logging.cpp 只去FFmpeg/libdisplaydevice日志挂钩 |
+| 配置默认值与键名 | 通过（静态/机械） | config-defaults.md 逐字段核对；脚本提取固定 config.cpp reader 与原始默认块，34个支持键名均存在上游，额外键0。修正 audio_stream→stream_audio、超时/重复率 sentinel 与日志级别名称；移除模块的配置明确拒绝 |
+| readelf NEEDED + ldd | 通过（依赖检查） | 直接NEEDED14→11；移除libva、libX11、libXtst、libpulse、libpulse-simple等直接项；新增直接libstdc++/libgcc_s/libgobject（完整前后清单留证）。新版NEEDED和全部ldd均无libav*/libsw*、curl、miniupnpc、pulse、EGL/GL，亦无缺库。FFmpeg原为静态部分，另核对新链接命令无这些库 |
+| build.sh offline | 通过（离线） | CTest31/31；Python/联合115项，2项缺精确内核fixture跳过，其余通过；包含阶段1密码1项、日志4项、overlay12项及新增依赖打包检查 |
+| test_minimal_startup.py | 通过（模拟） | uid1000、无网络/设备容器；密码热更、重复头、六路由逐请求认证、端口集合、无证书/PIN/Web、身份重启稳定、日志哨兵与资源清理；root拒绝另测通过 |
+| test_audio_loop.py | 通过（合成） | 复用生产rkmoon_audio对象，5/10/20ms×ALSA null注入/初始无源共6场景，Opus完整解码、静音/stale/xrun恢复、有界退出；无真实HDMI录音 |
+| 新旧serverinfo运行对比 | 通过（模拟） | 基线为阶段1 binary0175e353…，两种鼠标能力配置；根属性和21字段实际值全等，比较后才脱敏身份/地址 |
+| launch→RTSP额外检查 | 通过（有限模拟） | 合成probe-only worker，appid1 launch/独占launch拒绝、OPTIONS200、DESCRIBE200（344B SDP）、cancel及非法鼠标400。未授权采集、未调用媒体worker，不走ANNOUNCE/SETUP/PLAY |
+| 未覆盖 | 未测试 | resume、加密RTSP、完整媒体握手、真实HDMI/MPP编码/声音/USB与客户端；阶段4前不能宣称通过 |
+
+执行命令（均 VM301 ARM64/QEMU）：
+
+```bash
+RKMOON_BUILD_ROOT=/work/build JOBS=8 tools/build.sh sunshine \
+  -DRKMOON_SUNSHINE_SOURCE=/upstream -DRKMOON_BOOST_SOURCE=/deps/boost-src
+RKMOON_BUILD_ROOT=/work/build/stage2-offline JOBS=4 tools/build.sh offline
+python3 tools/test_minimal_startup.py --binary /evidence/new/rkmoon-kvm --output /evidence/startup
+python3 tools/test_audio_loop.py --build /work/build/server --output /evidence/audio
+python3 tools/test_rtsp_handshake.py --binary /evidence/new/rkmoon-kvm --output /evidence/handshake
+```
+
+首轮编译缺 Boost Endian/Format；迭代补齐 PropertyTree 与禁用桌面 EGL 声明后链接通过。回归曾发现“清单相同就跳过生成文件完整性校验”，原因定位并修复为先校验再复用，重跑115项通过。音频夹具的跨UID源码读取/链接依赖文件权限，以及额外RTSP夹具的Content-Length假设均已修正；没有改协议来迎合测试。失败日志保留，不把先前失败计为通过。按监督员澄清，正常开发编译缺项可直接迭代；未知回归原因、超ADR协议补丁或禁止范围变更才暂停。
+
+证据：`private/results/local/adr014/stage2/`；完整日志、二进制、清单和测试源码归档于 VM301 `/root/artifacts/rk-kvm-adr014-20261111/stage2-complete/`。阶段1与本阶段都不替代实机/客户端验收。
