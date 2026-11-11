@@ -45,7 +45,7 @@ Waveshare RP2350-USB-C 上运行的 USB HID 桥固件，协议与硬件设计见
 | D+ / D- / GND | 保持连通 |
 | VBUS / 5V | **必须断开，连接前用万用表确认** |
 
-**两个 Type-C 的 VBUS 在板上直连 VSYS；禁止用两根普通 USB 线接两台主机。** 先接原生口供电，再用断 VBUS 数据线接 PIO 口；不是只供电的“数据阻断器”。控制端应枚举 COM 或 /dev/ttyACM*，打开后置 DTR，再发 HELLO。现有 Windows 测试客户端已经置 DTR，可直接选择该 COM 口。
+**两个 Type-C 的 VBUS 在板上直连 VSYS；禁止用两根普通 USB 线接两台主机。** 先接原生口供电，再用断 VBUS 数据线接 PIO 口；不是只供电的“数据阻断器”。控制端应枚举 COM 或 /dev/ttyACM*，打开后置 DTR，再发 HELLO。
 
 ## 状态灯
 
@@ -89,7 +89,7 @@ firmware/rp2350-hid/tools/build.sh
 make -C firmware/rp2350-hid/tests
 ```
 
-测试同时读取共享测试向量 `docs/rp2350-protocol-vectors.json`（与 Windows 测试客户端共用），逐字节核对帧编码、重新同步流，以及固件生成的 INFO/PONG/NAK。
+测试同时读取共享测试向量 `docs/rp2350-protocol-vectors.json`，逐字节核对帧编码、重新同步流，以及固件生成的 INFO/PONG/NAK。
 
 ## 依赖版本（固定）
 
@@ -156,7 +156,7 @@ firmware/rp2350-hid/
 1. 两端 USB 均断开。确认 PIO 数据线/转接头 VBUS 不通，D+/D-/GND 连通；不要仅按商品名判断。
 2. BOOT + 原生口刷入 0.2 UF2。原生口接被控电脑供电，确认三个 HID 接口；此时 PIO 口保持断开。
 3. 用断 VBUS 线连接 PIO 口到 Windows 10+ / Linux 控制端，验证 usbser COM / cdc_acm、产品与唯一序列号；反向插头也要测试。
-4. 客户端选 COM，保持默认 1 Mbaud（CDC 忽略波特率），连接应显示固件 0.2、INFO caps=0x1f；验证 PING/PONG 与键鼠。
+4. 控制端打开 COM 并置 DTR，保持默认 1 Mbaud（CDC 忽略波特率），HELLO 应返回固件 0.2、INFO caps=0x1f；验证 PING/PONG 与键鼠。
 5. 验证 64/128 字节边界、ZLP、长时间连续输入、主机暂停读取、不同 USB Hub、丢 ACK 重试无重复输入；真实时序不能从主机模拟推断。
 6. 按键期间拔控制线、关闭端口使 DTR 掉、控制机睡眠：最后合法帧后约 500 ms 全释放。恢复后重新连接/HELLO；确认旧字节不重放。
 7. UART A/B 交替 HELLO，旧通道不能继续输入；500 ms 释放、原生 USB 挂起唤醒、BIOS boot 键鼠、WS2812 灯色与 UART 1 Mbaud 均回归。

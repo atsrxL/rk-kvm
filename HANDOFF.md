@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 2026-11-11 规划：服务端改为只抽取 Sunshine 的串流、握手与输入解包，其余（HTTP/认证、编码框架、配置、平台层）由本仓库薄实现替换，分四阶段，尚未实施。见 [ADR-014](docs/ADR-014-sunshine-extraction.md)。
+
 > 2026-09-25 最新：服务端发布 20260925-r10 已安装到 T6。无 HDMI 信号时，会话以 MPP 硬件编码的黑屏占位启动，键鼠照常可用（见 [ADR-011](docs/ADR-011-no-signal-session.md)）。worker 占位模式已在实机验证。客户端改为 Connect 后只显示并刷新服务端信息，按钮 View HDMI 改名为 Start，无信号时也能启动；这部分目前只通过了 Mac 离线测试，Windows 构建交付由子代理进行。
 
 > EDID最新：用户最终8模式、首选1080p120已写入T6并读回一致；Znas RTX5060Ti通过Windows枚举切换，8模式全部接收锁定（含1440p120/1600p120/4K60）。仅输入时序验收，未做新增模式采集编码。测试后实际输出1080p60，EDID首选仍120Hz，未配置开机持久化。见 [EDID实测](docs/EDID-EIGHT-MODES.md)。
@@ -113,11 +115,9 @@ T6 当前运行 /home/at/rkmoon-r3/（rkmoon-kvm 8c7cbf8a…，worker 647c109e�
 
 T6 服务端已从 home 下的散落目录迁到 /opt/rkmoon/releases/20260924-r9（current 链接），配置 /etc/rkmoon/runtime.json，状态 /var/lib/rkmoon。rkmoon、rkmoon-edid、rkmoon-hdmirx-audio、rkmoon-input 全部开机自启，EDID 开机自动写入。打包/安装/回滚见 docs/SERVER-INSTALL.md。旧临时服务 rkmoon-http-live 已停止；旧运行目录（/home/at/rkmoon-*、/usr/local/lib/rkmoon、/opt/rkmoon-input-venv、/opt/rkmoon-kvmd-source 及 /root/agent.backup 下的旧 rkmoon 备份）已于同日删除，约 2GB；只保留原始 EDID 备份。回滚只能用 /opt/rkmoon/releases 里的发布。HID 桥在 USB 离线时不再退出，而是拒绝租约直到按键释放成功。尚未做整机重启验证。
 
-## RP2350 HID 桥 Windows 测试客户端（2026-09-28，ADR-012）
+## RP2350 HID 桥 Windows 测试客户端（已移除，2026-11-11）
 
-tools/rp2350-client/：Qt 6.8.3 Widgets + QSerialPort，直接通过串口使用板子协议 v1（HELLO/INFO、200 ms PING/PONG、捕获区键鼠、RELEASE_ALL、"rkmoon" 输入测试）。协议/CRC 在 src/rp2350_protocol.*，不依赖界面。共享测试向量 docs/rp2350-protocol-vectors.json（本任务先定义，固件应复用）。ADR-012 补充了：PIO-USB 引脚 GP12=D+、GP13=D-（官方原理图与示例），两个 Type-C 口 VBUS 直连 VSYS 的供电警告，精确的重新同步规则、长度/seq/buttons 约定，以及 CRC 错误时的 NAK 不能用来重发。
-离线结果：Mac Qt 6.11.2 核心测试 12/12；Windows VM9007 Qt 6.8.3/VS2022 完整 QtTest 17/17，打包后 4 秒干净 PATH 启动冒烟通过。交付 smb://192.168.123.10/zssd/Target/RKMoon-RP2350-Client，30 个文件，delivery-manifest.json SHA256 682caedf8e191d019d8fb78ed18799ac7deb3fc475e642142c373b63ba7eeb9b，Mac 与 Windows UNC 两侧逐文件读回一致。
-**未接真板子**：真实 COM 口、HID 枚举、被控机输入和看门狗均未测试。VM9007（手工 ZFS 链接克隆 env-admin-ssh）已停机，清理截止 2026-09-29 15:05:22 CST。
+按用户要求从仓库移除 tools/rp2350-client/（Qt 串口测试客户端）。已提交的源码保留在 Git 历史（最后存在于 0f2a629）；当时未提交的 v0.2 会话恢复改动只留本地补丁 private/results/local/rp2350-client-uncommitted-20261111.patch（不提交）。固件 firmware/rp2350-hid、协议 ADR-012 与共享向量 docs/rp2350-protocol-vectors.json 不受影响；下文及 ADR/历史记录中提到的“Windows 测试客户端”均指该已移除工具。SMB Target/RKMoon-RP2350-Client 交付目录未动。
 
 ## RP2350 HID 桥固件（2026-09-28，ADR-012）
 
@@ -135,3 +135,14 @@ firmware/rp2350-hid/：pico-sdk 2.3.1 + 自带 TinyUSB 0.18.0，复合 HID（boo
 通道 B 已实现，默认 ON，**编译/主机测试，未上板**；此条取代旧“PIO CDC 未实现”状态。原生 TinyUSB HID + UART A 保留，PIO 独立 CDC（1209:0002、唯一序列号）运行 core1，120 MHz；PIO0 TX/DMA0、PIO1 RX、PIO2 灯。INFO v1 长度不变、固件 0.2、caps bit4 表示 B。DTR/SOF/reset 失效清理会话，按原 500 ms 看门狗规则释放，恢复需 HELLO。
 Docker ON/OFF 编译通过；Mac/Docker ASan/UBSan 核心各 200718 检查零失败，CDC 请求/描述符/跨线程缓冲/状态机模拟通过。原客户端 Mac Qt 12/12，新能力位兼容，客户端源码没改、未重建 Windows、未开 VM。产物/hash/交付见 [本轮记录](results/20260928-rp2350-cdc/STATUS.md)。默认 UF2 位于 Target/RKMoon-RP2350-HID，未访问 T6。
 **PIO 控制线必须断 VBUS，只接 D+/D-/GND；两口 VBUS 在板上直连，禁止两根普通线连两台主机。** 实际枚举、时序、USB 输入、拔线/挂起/背压等均待用户上板。
+
+
+## Znas 原有 USB 输入恢复（2026-09-29）
+
+Tiny11_clone 运行态 USB 直通仍引用旧地址 008/005；T6 重新枚举为 008/007 后，三个 HID 接口被宿主 usbhid 接管，客体仅剩模拟 PS/2 键鼠。T6 UDC configured/键盘端点可写不等于 Windows 客体收到输入。经授权的 T6 软件拔插未单独恢复，且节点重建后需恢复 root:rkmoon-input 0660。确认 RKMOON001 唯一设备后，以 virsh detach-device/attach-device --live 重新绑定同一 USB 设备；未修改虚拟机持久配置，未重启视频或虚拟机。Windows QGA 检查复合设备、键盘、相对/绝对鼠标均 Status OK，T6 keyboard/mouse online=true，13:45:38 输入租约重新取得。用户实际操作待确认。
+持久配置已有 VID/PID 匹配，但运行态 QEMU 仍可能绑定旧 bus/device；此次是恢复，尚未实现跨设备重枚举自动重挂。证据在 private/results/local/20260929-input（不提交）。
+
+
+### 2026-09-29 后续：输入到了另一块屏幕
+
+USB 重挂后用户仍报告无效，随后确认操作落在另一屏幕。QGA 交互桌面核实：SudoMaker DISPLAY5 是主屏(0,0)，RTX HDMI DISPLAY1/RKP3588 是扩展屏(1920,0)。HTTP 及实际租约/WebSocket 输入链路分别发送四次无点击位移，Windows 光标观察各确认四次变化；不能将先前无会话期间的零报告统计当成客户端未发送证据。通过 Windows 显示 API 持久设置 HDMI 为唯一活动主屏，保持 1920×1080@60；虚拟显示适配器未卸载。原始 DEVMODE/设备名保存在客体 C:/ProgramData/RKMoon-input-diag-20260929/original-*，诊断计划任务已清理。回读只剩 DISPLAY1 primary=True，USB 键鼠在线；用户当前客户端实测待确认。
