@@ -215,3 +215,42 @@ python3 tools/test_rtsp_handshake.py --binary /evidence/new/rkmoon-kvm --output 
 首轮编译缺 Boost Endian/Format；迭代补齐 PropertyTree 与禁用桌面 EGL 声明后链接通过。回归曾发现“清单相同就跳过生成文件完整性校验”，原因定位并修复为先校验再复用，重跑115项通过。音频夹具的跨UID源码读取/链接依赖文件权限，以及额外RTSP夹具的Content-Length假设均已修正；没有改协议来迎合测试。失败日志保留，不把先前失败计为通过。按监督员澄清，正常开发编译缺项可直接迭代；未知回归原因、超ADR协议补丁或禁止范围变更才暂停。
 
 证据：`private/results/local/adr014/stage2/`；完整日志、二进制、清单和测试源码归档于 VM301 `/root/artifacts/rk-kvm-adr014-20261111/stage2-complete/`。阶段1与本阶段都不替代实机/客户端验收。
+
+
+## ADR-014 阶段3：裁剪平台层（2026-11-12）
+
+本阶段完成；阶段4未实施。所有编译/测试在MS-A2 VM301（amd64客体，ARM64/QEMU容器，GCC14.2/CMake3.31.6）执行。未访问T6或任何设备，不改client/firmware/worker/python，不交付Windows或完整设备发布包。
+
+| 检查 | 状态 | 证据与边界 |
+|---|---|---|
+| 实际平台调用/抽取 | 通过（机械审计） | 脚本扫描保留源码及自有实现，35个调用形式符号有文件/行号；地址转换、UDP/GSO/批量发送、QoS/主机名、计时主体与固定上游逐字节一致。无调用者的MAC/桌面/DRM/VAAPI等不保留 |
+| 生成/保留补丁 | 通过（离线） | 干净固定独立克隆，check-only及CMake生成均成功；生成文件241→180。仅stream.cpp、rtsp.cpp、input.cpp、thread_safe.h、logging.cpp及既有rtsp.h鼠标字段；六份变换结果与阶段2完全相同。rtsp.h为唯一偏差，维持每会话鼠标模式传递，无新增协议改动 |
+| ARM64完整链接 | 通过（仅编译） | SHA256 `b2bdc550c7ebb8411b6de448c0aac4fa799383e1cbbc9386dcde976eb69c98fb`；misc/两个virtualhid实现与graphics/VAAPI垫片退役，链接命令无libvirtualhid、libevdev、GIO、cap、lizardbyte-common、Boost.Locale或旧媒体/图形库 |
+| 依赖/私有lib目录 | 通过（目标镜像检查） | 实测NEEDED11→7；移除cap/evdev/gio/glib直接依赖，完整ldd无GIO/GLib/GObject和阶段2禁用项、无缺库。按package_server.runtime_closure生成服务端组件lib目录17→5，18,404,856→11,817,832字节；glibc/加载器/C++运行库仍为系统依赖，worker/MPP不变且排除计数。不是完整设备包数量声明 |
+| build.sh offline | 通过（离线） | CTest31/31；Python113项，2项缺精确内核fixture跳过，其余通过。包含密码1项、日志4项、overlay10项与包闭包检查；较阶段2删除两个只针对退役平台补丁文本的断言 |
+| 启动/密码回归 | 通过（隔离模拟） | root拒绝、普通用户私有状态、两个端口、六路由逐请求认证、密码文件热更旧拒新通过、重启uniqueid稳定、日志脱敏及清理均通过 |
+| 音频循环 | 通过（合成） | 生产audio对象，5/10/20ms×注入ALSA null/无源6场景、Opus解码/恢复/有界停止；无真实声卡 |
+| 输入转发 | 通过（合成） | 生产platf入口→rkmoon_bridge→HidClient→同UID假UDS，相对/绝对各7事件按序逐值相等；空Unicode/touch/pen不产生事件、手柄返回不支持；verbose日志无事件内容，观察到租约EOF。不创建uinput，不等于USB消费/物理释放验收 |
+| serverinfo运行对比 | 通过（模拟） | 基线为阶段2 binary3b3f36c6…；两种鼠标能力配置，根属性及21字段实际值全等，身份/地址比较后脱敏 |
+| launch→RTSP | 通过（有限模拟） | 合成probe-only worker；launch、独占拒绝、OPTIONS200、DESCRIBE200（344B SDP）、cancel、非法鼠标400；未走媒体worker |
+| 实机/未覆盖 | 未测试 | resume、加密RTSP、ANNOUNCE/SETUP/PLAY/完整媒体握手、真实HDMI/MPP/音频/USB、客户端与性能；负nice权限不足时仍使用普通调度，未做延迟实测 |
+
+依赖取舍：GIO/RTKit改为上游setpriority回退，线程nice映射保持；libcap改读/proc/self/status相同能力位并在失败时拒绝；lizardbyte-common环境读取改getenv。nlohmann_json继续不存在；Simple-Web-Server为现有六路由HTTP保留，Boost/OpenSSL/ENet/Opus/ALSA承担实际协议/日志/编解码。没有为了裁剪改写协议。
+
+实际命令（均VM301，运行夹具均在无网络、无设备、cap-drop ALL容器中，root拒绝外使用uid1000）：
+
+```bash
+python3 tools/prepare_sunshine.py /upstream
+RKMOON_BUILD_ROOT=/work/build JOBS=8 tools/build.sh sunshine \
+  -DRKMOON_SUNSHINE_SOURCE=/upstream -DRKMOON_BOOST_SOURCE=/deps/boost-src
+RKMOON_BUILD_ROOT=/work/build/stage2-offline JOBS=4 tools/build.sh offline
+python3 tools/audit_platform.py /work/build/server/protocol --upstream /upstream --output platform-references-after.json
+python3 tools/audit_server_dependencies.py --before /evidence/old/rkmoon-kvm --after /evidence/new/rkmoon-kvm --output /evidence/dependencies
+python3 tools/test_minimal_startup.py --binary /evidence/new/rkmoon-kvm --output /evidence/startup
+python3 tools/test_audio_loop.py --build /work/build/server --output /evidence/audio
+python3 tools/test_input_bridge.py --build /work/build/server --output /evidence/input
+python3 /compare.py
+python3 tools/test_rtsp_handshake.py --binary /evidence/new/rkmoon-kvm --output /evidence/handshake
+```
+
+两轮开发/最终ARM64构建及全部回归均通过，无失败验收被改标通过。证据：`private/results/local/adr014/stage3/`；完整日志、二进制、生成清单、依赖lib目录和夹具归档于VM301 `/root/artifacts/rk-kvm-adr014-20261111/stage3-complete/`。源码缓存按SSHH期限保留，不作为交付路径。

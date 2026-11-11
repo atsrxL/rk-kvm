@@ -4,10 +4,10 @@
 import argparse, hashlib, json, os, shutil, subprocess, tempfile
 from pathlib import Path
 from apply_sunshine import PIN, ROOT, make_changes, PatchError, git
-SOURCES=['stream.cpp','rtsp.cpp','input.cpp','crypto.cpp','network.cpp','logging.cpp','globals.cpp','platform/linux/misc.cpp','platform/virtualhid_input.cpp','platform/linux/input/virtualhid.cpp']
-HEADERS=['stream.h','rtsp.h','input.h','crypto.h','network.h','logging.h','globals.h','utility.h','thread_safe.h','task_pool.h','thread_pool.h','sync.h','uuid.h','move_by_copy.h','round_robin.h','stat_trackers.h','entry_handler.h','platform/common.h','platform/virtualhid_input.h','platform/linux/misc.h']
-PATCHED=['src/'+p for p in ['stream.cpp','rtsp.cpp','input.cpp','rtsp.h','logging.cpp','thread_safe.h','platform/linux/misc.cpp','platform/virtualhid_input.cpp']]
-STUBS=['video.h','audio.h','config.h','process.h','display_device.h','system_tray.h','httpcommon.h','nvhttp.h','video_colorspace.h','platform/linux/graphics.h','platform/linux/vaapi.h']
+SOURCES=['stream.cpp','rtsp.cpp','input.cpp','crypto.cpp','network.cpp','logging.cpp','globals.cpp']
+HEADERS=['stream.h','rtsp.h','input.h','crypto.h','network.h','logging.h','globals.h','utility.h','thread_safe.h','task_pool.h','thread_pool.h','sync.h','uuid.h','move_by_copy.h','round_robin.h','stat_trackers.h','entry_handler.h','platform/common.h']
+PATCHED=['src/'+p for p in ['stream.cpp','rtsp.cpp','input.cpp','rtsp.h','logging.cpp','thread_safe.h']]
+STUBS=['video.h','audio.h','config.h','process.h','display_device.h','system_tray.h','httpcommon.h','nvhttp.h','video_colorspace.h','platform/virtualhid_input.h']
 def prepare(repo,output=None,refresh=False):
     repo=repo.resolve()
     if git(repo,'rev-parse','HEAD')!=PIN:raise PatchError('upstream HEAD differs from pin')
@@ -19,6 +19,7 @@ def prepare(repo,output=None,refresh=False):
     if output is None:return {'commit':PIN,'patched_files':len(changes),'operation':'check-only'}
     output=output.resolve();output.parent.mkdir(parents=True,exist_ok=True)
     stage=Path(tempfile.mkdtemp(prefix='rkmoon-sources-',dir=output.parent))
+    stage.chmod(0o755)
     try:
         for name in SOURCES+HEADERS:
             p=stage/'src'/name;p.parent.mkdir(parents=True,exist_ok=True)
@@ -28,13 +29,13 @@ def prepare(repo,output=None,refresh=False):
         helpers=stage/'src/rkmoon';helpers.mkdir()
         for p in (ROOT/'sunshine').glob('rkmoon_*'):
             if p.is_file():shutil.copy2(p,helpers/p.name)
-        for name in ['Simple-Web-Server','libvirtualhid/src','lizardbyte-common/src','moonlight-common-c/enet','moonlight-common-c/nanors']:
+        for name in ['Simple-Web-Server','moonlight-common-c/enet','moonlight-common-c/nanors']:
             shutil.copytree(repo/'third-party'/name,stage/'third-party'/name,ignore=shutil.ignore_patterns('.git','__pycache__'))
         common=stage/'third-party/moonlight-common-c/src';common.mkdir(parents=True,exist_ok=True)
         for path in (repo/'third-party/moonlight-common-c/src').glob('*.h'):shutil.copy2(path,common/path.name)
         shutil.copy2(repo/'third-party/moonlight-common-c/src/RtspParser.c',common/'RtspParser.c')
         licenses=stage/'licenses';licenses.mkdir()
-        for name,source in [('Sunshine',repo),('Simple-Web-Server',repo/'third-party/Simple-Web-Server'),('libvirtualhid',repo/'third-party/libvirtualhid'),('lizardbyte-common',repo/'third-party/lizardbyte-common'),('moonlight-common-c',repo/'third-party/moonlight-common-c'),('enet',repo/'third-party/moonlight-common-c/enet'),('nanors',repo/'third-party/moonlight-common-c/nanors')]:
+        for name,source in [('Sunshine',repo),('Simple-Web-Server',repo/'third-party/Simple-Web-Server'),('moonlight-common-c',repo/'third-party/moonlight-common-c'),('enet',repo/'third-party/moonlight-common-c/enet'),('nanors',repo/'third-party/moonlight-common-c/nanors')]:
             for path in source.glob('LICENSE*'):
                 if path.is_file():shutil.copy2(path,licenses/(name+'-'+path.name))
         assets=stage/'assets';assets.mkdir();shutil.copy2(ROOT/'config/hdmi-apps.json',assets/'apps.json');shutil.copy2(repo/'src_assets/common/assets/box.png',assets/'box.png')

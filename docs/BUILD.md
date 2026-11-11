@@ -1,12 +1,12 @@
 # 构建、硬件前置与固定依赖
 
-> 2026-11-12：ADR-014阶段2自有构建已通过 VM301 ARM64/QEMU 完整链接、离线与有限模拟验收；旧 Sunshine CMake/就地overlay退役，真实媒体和设备验收未执行。详见 [验收表](ACCEPTANCE.md)。
+> 2026-11-12：ADR-014阶段3平台裁剪已通过 VM301 ARM64/QEMU完整链接、离线及有限模拟验收；NEEDED11→7，服务端私有库闭包17→5。真实媒体、USB和客户端验收未执行。详见 [验收表](ACCEPTANCE.md)。
 
 > 2026-09-23 本地更新：完整 Sunshine 与真实 MPP worker 已在 Linux amd64 编译链接通过；25 原生、69 Python/联合、25 sanitizer 测试通过。目标 ARM64/P1/P2/P3 仍未测试。最新结果见 [构建记录](../results/20260923-build/STATUS.md)。下文原交接记录保留供追溯。
 
 ## 0. 环境
 
-独立组件要求 Linux、CMake≥3.20、C++17、Python≥3.10、pthread、Linux UAPI。专用服务端要求 **CMake≥3.24、Ninja、C++23**。自有构建仅保留固定 Sunshine 网络/输入源码，依赖 OpenSSL、Boost≥1.87（含 Endian、Format、Property Tree）、Opus、ALSA；阶段2暂保留完整 Linux misc/虚拟HID层，因此还需要 GIO、libevdev、libcap。无需 FFmpeg、curl、miniupnpc、PulseAudio、EGL/GL、npm。不要把系统旧编译器一定可用作为假设。[S1/S2]
+独立组件要求 Linux、CMake≥3.20、C++17、Python≥3.10、pthread、Linux UAPI。专用服务端要求 **CMake≥3.24、Ninja、C++23**。自有构建仅保留固定 Sunshine 网络/输入源码，依赖 OpenSSL、Boost≥1.87（含 Endian、Format、Property Tree）、Opus、ALSA；平台与输入函数由本仓库提供，不依赖 GIO/GObject、libcap、libevdev、libvirtualhid、lizardbyte-common 或 nlohmann_json。无需 FFmpeg、curl、miniupnpc、PulseAudio、EGL/GL、npm。不要把系统旧编译器一定可用作为假设。[S1/S2]
 
 本次云端：x86_64、GNU g++14.2.0、CMake3.31.6；没有MPP SDK/板卡。SDK源码和Sunshine完整构建未通过。以下是可执行构建流程，不是已在目标板成功的记录。
 
@@ -45,7 +45,7 @@ ldd build/native/rkmoon-worker
 
 MPP的动态库路径若未由build rpath解决，只给本实例设置私有LD_LIBRARY_PATH；不要全局写`/etc/ld.so.conf`。特别检查旧KVM仍加载原来的库。
 
-## 4. 自有服务端构建（ADR-014 阶段2）
+## 4. 自有服务端构建（ADR-014 阶段3）
 
 ```bash
 # 只读核对固定 HEAD、干净状态、子模块和唯一补丁锚点；不写 vendor：
@@ -77,9 +77,11 @@ readelf -d build/server/rkmoon-kvm
 ldd build/server/rkmoon-kvm
 python3 tools/test_minimal_startup.py --binary build/server/rkmoon-kvm --output PRIVATE_OUT
 python3 tools/test_audio_loop.py --build build/server --output PRIVATE_AUDIO_OUT
+python3 tools/test_input_bridge.py --build build/server --output PRIVATE_INPUT_OUT
+python3 tools/audit_platform.py build/server/protocol --upstream /absolute/clean/Sunshine --output platform-references.json
 ```
 
-启动验证在隔离容器中以非root运行，音频工具使用 ALSA null/注入状态，均不能作为真实 HDMI、MPP 或客户端验收。链接清单应不含 libav*/libsw*、curl、miniupnpc、pulse、EGL/GL；原动态依赖与新依赖的对比单独留证。不得运行 Sunshine 的安装流程或覆盖旧服务。当前实际测试状态见 ACCEPTANCE。
+启动验证在隔离容器中以非root运行，音频工具使用 ALSA null/注入状态，输入工具通过生产 platf 入口、桥接层和 HidClient 发送到本人私有假 UDS，均不能作为真实 HDMI、USB、MPP 或客户端验收。链接清单应不含 libav*/libsw*、curl、miniupnpc、pulse、EGL/GL；原动态依赖与新依赖的对比单独留证。不得运行 Sunshine 的安装流程或覆盖旧服务。当前实际测试状态见 ACCEPTANCE。
 
 ## 5. 设备权限
 
@@ -103,3 +105,7 @@ python3 tools/validate_capture.py results/local/p1-hevc/capture.hevc \
 ```
 
 随后以新结果目录测试H264。独立解码可在PC进行；解码使用CPU不等于生产视频编码走CPU。不能把 `worker --probe` 的合成黑帧统计当成真实 HDMI验收。
+
+平台裁剪审计：`rkmoon_platform.cpp` 保留固定提交的地址转换、UDP/GSO/批量发送、QoS、主机名和计时主体；`appdata` 只取私有 XDG，不迁移桌面状态。线程优先级直接使用上游 `setpriority` 回退，无 D-Bus/RTKit 提权；负 nice 被普通用户拒绝时仅记录状态。权限检查读取 `/proc/self/status` 的 CapEff/CapPrm，检查与原实现相同的 SYS_ADMIN/SYS_NICE 位，读取或解析失败拒绝启动。`rkmoon_input.cpp` 只向 HID 桥转发键鼠；刷新钩子与不支持的设备均为空，不创建 uinput。
+
+依赖/包目录可复核：在同一目标运行镜像中执行 `python3 tools/audit_server_dependencies.py --before OLD/rkmoon-kvm --after NEW/rkmoon-kvm --output PRIVATE_DEPS_OUT`。它保存 readelf/ldd，并按生产打包器的 `runtime_closure` 实际生成两个服务端组件的 `lib/`；glibc/加载器/C++运行库保持系统依赖。worker/MPP 不变，计数不冒充完整设备发布包。

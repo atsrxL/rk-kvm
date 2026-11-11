@@ -76,3 +76,7 @@ git 仓库只有源码，不含编译好的二进制和私有运行库（build/ 
 5. 安装服务端：sudo python3 tools/install_server.py --release rkmoon-server-20260924-r9.tar.gz --user at --start。发布包需要事先备份，或按 docs/BUILD.md 重新编译后用 package_server.py 生成。
 6. 服务器身份（uniqueid）会重新生成。如需保留，恢复前备份 /var/lib/rkmoon/xdg/sunshine/sunshine_state.json，之后用 --migrate-state 导入；否则在客户端删除这台主机，再重新添加。
 
+
+### ADR-014 平台裁剪后的运行依赖
+
+服务端已移除 Sunshine 桌面 misc、虚拟 HID 与 GIO/GObject、libcap、libevdev、libvirtualhid、lizardbyte-common 依赖；不需要 uinput。键鼠仍只通过 `RKMOON_HID_SOCKET` 取得独占租约，断开由桥接服务释放。Simple-Web-Server 继续承载六个 HTTP 路由，Boost Property Tree 负责 XML/身份状态；未引入 JSON 库。真实设备安装与媒体/USB 验收属于 ADR-014 阶段4，本轮未执行。

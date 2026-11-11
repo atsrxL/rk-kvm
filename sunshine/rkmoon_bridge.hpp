@@ -5,6 +5,7 @@
 #include <optional>
 #include <cstdlib>
 #include <string_view>
+#include <thread>
 namespace rkmoon_sunshine {
 template<class Args> std::optional<bool> mouse_mode(const Args& args) {
   if(args.count("rkmoonMouseMode")>1)return std::nullopt;
@@ -16,6 +17,13 @@ template<class Args> std::optional<bool> mouse_mode(const Args& args) {
 }
 // This is a dedicated patched executable, never an automatic fallback mode in an installed Sunshine.
 bool enabled() noexcept;
+// One capture session owns the HID lease and joins acquisition before releasing it.
+class input_session_t {
+  std::jthread keeper;
+public:
+  input_session_t(std::string socket,bool absolute);
+  ~input_session_t();
+};
 int probe();
 bool request_supported(const video::config_t&) noexcept;
 void capture(safe::mail_t mail,video::config_t config,void* channel_data);

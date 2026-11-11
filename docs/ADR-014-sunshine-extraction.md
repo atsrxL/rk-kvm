@@ -1,6 +1,6 @@
 # ADR-014：只抽取 Sunshine 的串流与输入模块
 
-状态：阶段1、阶段2完成（2026-11-12，离线/ARM64编译/模拟验收）；阶段3/4未实施。后续平台裁剪及真实媒体/输入仍需独立验收。
+状态：阶段1/2/3完成（2026-11-12，离线/ARM64编译/有限模拟验收）；阶段4未实施，真实媒体/USB输入及客户端仍需独立验收。
 
 ## 问题
 
@@ -86,7 +86,13 @@
 
 ### 阶段 3：裁剪平台层
 
+当前状态：完成（2026-11-12）。VM301 ARM64/QEMU完整链接，CTest31/31、Python113项（2内核fixture跳过，其余通过）、阶段1启动/密码/日志回归、六个音频场景、21字段双配置对比和合成OPTIONS/DESCRIBE均通过。新增生产platf→桥→HidClient→假UDS测试，相对/绝对模式各7个事件全等、顺序保持，详细日志无事件内容。NEEDED11→7，生产打包算法实际生成的服务端组件私有lib目录17→5（18,404,856→11,817,832字节）；worker/MPP不变，未制作完整设备发布包。证据和剩余边界见ACCEPTANCE。
+
 - 从 `misc.cpp` 抽出所需函数到 `sunshine/rkmoon_platform.cpp`；输入函数改为直接实现，移除 `virtualhid_input.cpp` 与 libvirtualhid。
+- 实际引用以 `tools/audit_platform.py` 对生成目录扫描为准，记录35个调用形式符号。`get_mac_address` 没有调用者，不保留；地址转换、UDP/GSO/批量发送、QoS、主机名和计时主体与固定提交逐字节一致。XDG路径、无操作初始化及线程命名直接提供。
+- GIO/RTKit移除，线程优先级沿用上游 setpriority 回退（普通用户可能无法设置负nice，不提权）；libcap移除，读取Linux procfs的有效/允许能力位，SYS_ADMIN/SYS_NICE掩码相同，读取/解析失败拒绝启动。lizardbyte-common的唯一有效使用是XDG环境读取，改为getenv；nlohmann_json仍不引入。Simple-Web-Server保留，用于六个HTTP路由，避免在平台裁剪阶段改写HTTP行为。
+- 输入上下文只含空刷新钩子，保留原gamepad配置名称但始终不支持分配。键鼠经生产桥与HidClient转发，作用域租约负责先停止并加入获取线程、再释放连接；不创建本机输入设备。
+- 补丁清单的唯一偏差：另保留 `rtsp.h` 中单个 `rkmoon_absolute_mouse` 会话字段，与阶段1/2字节相同；它传递每会话鼠标选择，删除会丢失既有行为。没有新增协议补丁或复制整份替身RTSP头。
 - 完成标准：`apply_sunshine.py` 只剩 `stream.cpp`、`rtsp.cpp`、`input.cpp`、`thread_safe.h`、`logging.cpp` 的修改；发布包 `lib/` 中的私有库数量下降并记录前后对比。
 
 ### 阶段 4：实机验收

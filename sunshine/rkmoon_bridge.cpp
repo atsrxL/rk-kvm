@@ -73,6 +73,8 @@ void maintain_input(std::stop_token stop,std::string path,bool absolute){
   }
 }
 }
+input_session_t::input_session_t(std::string socket,bool absolute):keeper(maintain_input,std::move(socket),absolute) {}
+input_session_t::~input_session_t(){keeper.request_stop();keeper.join();release_input();}
 bool enabled() noexcept{return true;}
 bool request_supported(const video::config_t& c) noexcept{try{translate(c);return yes("RKMOON_CAPTURE_AUTHORIZED");}catch(...){return false;}}
 int probe(){
@@ -94,7 +96,7 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
   std::unique_lock owner(video_owner,std::try_to_lock);
   if(!owner.owns_lock()){BOOST_LOG(error)<<"RKMoon exclusive capture busy";shutdown_event->raise(true);return;}
   // An explicit scope ensures input EOF/release happens before this owner can be replaced.
-  auto cleanup=util::fail_guard([&]{release_input();shutdown_event->raise(true);});
+  auto cleanup=util::fail_guard([&]{shutdown_event->raise(true);});
   try {
     if(!yes("RKMOON_CAPTURE_AUTHORIZED"))throw std::runtime_error("capture ownership has not been granted");
     auto c=translate(config);
@@ -110,10 +112,10 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
     mail->event<::input::touch_port_t>(mail::touch_port)->raise(::input::touch_port_t{
       {0,0,int(c.width),int(c.height),0,0},int(c.width),int(c.height),0,0,1,1,0,0});
     mail->event<video::hdr_info_t>(mail::hdr)->raise(std::make_unique<video::hdr_info_raw_t>(false));
-    // Declared after 'cleanup': joined (and any in-flight acquisition finished) before release_input().
-    std::jthread input_keeper;
+    // Scoped lease joins acquisition and releases input before capture cleanup/owner unlock.
+    std::unique_ptr<input_session_t> input_keeper;
     if(!env("RKMOON_HID_SOCKET").empty())
-      input_keeper=std::jthread(maintain_input,env("RKMOON_HID_SOCKET"),bool(config.rkmoon_absolute_mouse));
+      input_keeper=std::make_unique<input_session_t>(env("RKMOON_HID_SOCKET"),bool(config.rkmoon_absolute_mouse));
     auto idr=mail->event<bool>(mail::idr);
     auto queue=mail::man->queue<video::packet_t>(mail::video_packets);
     rkmoon::SequenceGate gate;

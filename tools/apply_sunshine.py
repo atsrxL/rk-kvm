@@ -40,27 +40,6 @@ def make_changes(original):
             text=at_entry(text,"  void print(void *payload)",
                 "    if (rkmoon_sunshine::enabled()) { return; } // Never log decoded input, even at verbose.\n")
             text=at_entry(text,"  inline int apply_shortcut(short keyCode)","    if (rkmoon_sunshine::enabled()) { return 0; } // Send shortcuts to the USB host, not T6.\n")
-        elif path=="src/platform/virtualhid_input.cpp":
-            text=at_entry(text,"  std::unique_ptr<lvh::Runtime> create_runtime(lvh::BackendKind backend)",
-                "    if (rkmoon_sunshine::enabled()) { return {}; } // No T6 uinput/libvirtualhid devices.\n")
-            calls={
-                "  void move_mouse(input_t &input, int deltaX, int deltaY)":"rkmoon_sunshine::relative(deltaX, deltaY);",
-                "  void abs_mouse(input_t &input, const touch_port_t &touch_port, float x, float y)":"rkmoon_sunshine::absolute(touch_port, x, y);",
-                "  void button_mouse(input_t &input, int button, bool release)":"rkmoon_sunshine::button(button, release);",
-                "  void scroll(input_t &input, int high_res_distance)":"rkmoon_sunshine::scroll(0, high_res_distance);",
-                "  void hscroll(input_t &input, int high_res_distance)":"rkmoon_sunshine::scroll(high_res_distance, 0);",
-                "  void keyboard_update(input_t &input, uint16_t modcode, bool release, uint8_t flags)":"rkmoon_sunshine::key(modcode, release, flags);",
-                "  void unicode(input_t &input, const char *utf8, int size)":"/* No clipboard/text injection. */",
-                "  void touch_update(client_input_t *input, const touch_port_t &touch_port, const touch_input_t &touch)":"/* No touch injection. */",
-                "  void pen_update(client_input_t *input, const touch_port_t &touch_port, const pen_input_t &pen)":"/* No pen injection. */",
-            }
-            for signature,call in calls.items():
-                text=at_entry(text,signature,"    if (rkmoon_sunshine::enabled()) { "+call+" return; }\n")
-        elif path=="src/platform/linux/misc.cpp":
-            text=at_entry(text,"  fs::path appdata()",
-                '    if (rkmoon_sunshine::enabled()) { auto base = fs::path(lizardbyte::common::get_env("XDG_CONFIG_HOME")); return base.is_absolute() ? base / "sunshine" : fs::path("/nonexistent/rkmoon-private-state-required"); } // Never migrate an installed Sunshine state.\n')
-            text=at_entry(text,"  std::unique_ptr<deinit_t> init()",
-                "    if (rkmoon_sunshine::enabled()) { return std::make_unique<deinit_t>(); } // No EGL/desktop capture initialization.\n")
         elif path=="src/logging.cpp":
             text=once(text, '#else\n  #include <display_device/logging.h>\n', '')
             text=once(text, 'extern "C" {\n#include <libavutil/log.h>\n}\n', '')
