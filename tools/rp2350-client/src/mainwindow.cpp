@@ -32,7 +32,7 @@ MainWindow::MainWindow(QWidget *parent)
     , bridge_(new SerialBridge(this))
     , capture_(new CaptureArea)
 {
-    setWindowTitle(tr("RKMoon RP2350 HID 桥测试客户端"));
+    setWindowTitle(tr("rk-kvm RP2350 HID 桥测试客户端"));
 
     portBox_ = new QComboBox;
     portBox_->setMinimumContentsLength(24);

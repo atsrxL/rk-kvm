@@ -10,6 +10,7 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("RKMoon");
     QCoreApplication::setApplicationName("RKMoon HDMI KVM");
+    QGuiApplication::setApplicationDisplayName("rk-kvm");
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_EVENTS) != 0) return 1;
     KvmWindow window;

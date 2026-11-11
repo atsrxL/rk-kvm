@@ -1,4 +1,4 @@
-# RKMoon RP2350 HID 桥 Windows 测试客户端
+# rk-kvm RP2350 HID 桥 Windows 测试客户端
 
 这个工具在没有 T6 的情况下，直接通过串口使用 RP2350 HID 桥的协议（docs/ADR-012-rp2350-hid-bridge.md，协议 v1）控制被控电脑，同时检查板子是否工作正常。Qt 6.8.3 Widgets + QSerialPort 实现，协议编码和 CRC 放在不依赖界面的 src/rp2350_protocol.*，以后可以直接复用到主客户端。
 

@@ -1,4 +1,4 @@
-# RKMoon minimal HDMI client (internal evaluation)
+# rk-kvm minimal HDMI client (internal evaluation)
 
 Windows-first Qt Widgets frontend over **Moonlight Qt v6.1.0** (not “Qt framework 6.1”).
 Fixed source/submodule commits: `sources.lock.json`. Qt framework build versions and

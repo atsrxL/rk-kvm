@@ -1,4 +1,6 @@
-# RKMoon — NanoPC-T6 HDMI → Moonlight KVM
+# rk-kvm — NanoPC-T6 HDMI → Moonlight KVM
+
+项目仓库：[atsrxL/rk-kvm](https://github.com/atsrxL/rk-kvm)。2026-11-11 更名说明与兼容标识见 [项目命名](docs/PROJECT-NAME.md)。
 
 > 最新要求：HTTP＋密码，取消HTTPS/证书验证；默认密码 `kvm`，Windows为主要客户端。此条取代下文旧TLS/TOFU要求，见 [ADR-005](docs/ADR-005-http-password.md)。
 

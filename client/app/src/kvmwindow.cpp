@@ -65,7 +65,7 @@ KvmWindow::KvmWindow() : m_host(m_config)
     RkmoonDiagnostics::record("window-created");
     connect(&m_poll, &QTimer::timeout, this, &KvmWindow::pollDisplay);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &KvmWindow::reconnectNow);
-    setWindowTitle(tr("RKMoon HDMI KVM"));
+    setWindowTitle(tr("rk-kvm"));
     setMinimumWidth(400);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel(tr("Dedicated HDMI host address (IP or DNS name) and port:")));

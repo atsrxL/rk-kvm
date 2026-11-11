@@ -1,4 +1,4 @@
-# RKMoon RP2350 HID 桥固件
+# rk-kvm RP2350 HID 桥固件
 
 Waveshare RP2350-USB-C 上运行的 USB HID 桥固件，协议与硬件设计见 [ADR-012](../../docs/ADR-012-rp2350-hid-bridge.md)。
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(rkmoon VERSION 0.1.0 LANGUAGES CXX)
+project(rk-kvm VERSION 0.1.0 LANGUAGES CXX)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(FATAL_ERROR "RKMoon runtime and offline socket tests require Linux")
 endif()
