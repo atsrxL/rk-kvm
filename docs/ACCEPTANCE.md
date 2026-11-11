@@ -161,3 +161,24 @@
 | 原生 HID、UART A/B 切换、拔线/DTR/挂起释放、WS2812 | 未测试 | 见固件 README 上板清单，先确认控制线断 VBUS |
 
 完整产物/hash 与失败修复记录见 [本轮记录](../results/20260928-rp2350-cdc/STATUS.md)。没有 T6 操作，没有服务端或 client/ 改动，没有实机通过声明。
+
+## ADR-014 阶段 1：HTTP 与认证替换（2026-11-12）
+
+阶段 1 完成。仅离线、编译及模拟 HTTP 启动验收；未访问 T6、未打开真实 HDMI/HID，未做 Windows/客户端交付或实机验收。阶段 2/3/4 未实施。
+
+| 检查 | 状态 | 证据与边界 |
+|---|---|---|
+| 独立 Sunshine 克隆与子模块 | 通过 | VM301 从上游递归克隆，HEAD `63d35f702ee9e362e43263742981836ec0710384`；应用前工作树干净，递归子模块全部与固定提交一致 |
+| 新 overlay dry-run / --apply | 通过 | 13 个原文件、406 行补丁，摘要 `67eda06100cdd4641961efbfd16d8a8a1f8ef58b8142bb318f63b1163ad6d9ce`；原 HTTP 两个 cpp 不再编译，新增 rkmoon_http.cpp |
+| dedicated rkmoon-kvm 完整链接 | 通过（仅编译） | VM301 amd64 上 ARM64/QEMU 容器；`RKMOON_BUILD_ROOT=/work/build/1440p90 JOBS=8 tools/build.sh sunshine -DFETCHCONTENT_UPDATES_DISCONNECTED=ON`；新 binary SHA256 `0175e353f520b423828715518cc962e40da011a12e90a581f3a04e9e08c15ed7` |
+| tools/build.sh offline | 通过（离线） | 同一 ARM64/QEMU 容器，`RKMOON_BUILD_ROOT=/work/build/adr014-offline JOBS=4 tools/build.sh offline`；CTest 31/31；Python/联合 114 项、2 项因缺精确内核源码 fixture 跳过，其余通过 |
+| test_password_auth.py | 通过（离线） | VM301 amd64 单独运行 1 项，亦包含在 ARM64 offline；生产 verifier 的失败预算、长度限制、密码文件热更旧拒新准、权限/符号链接拒绝 |
+| test_log_redaction.py / test_overlay.py | 通过（离线） | ARM64/QEMU 容器分别 4/4、14/14；保留 RTSP/input/control 脱敏与固定锚点回归 |
+| test_minimal_startup.py | 通过（模拟） | 非 root、独立无网络 Docker；合成 probe worker，无媒体流。六路由逐请求认证、重复头拒绝、密码热更、仅 HTTP47989/RTSP48010、无证书/PIN/Web、身份重启稳定、查询哨兵不入日志；root 拒绝另测通过 |
+| 旧版完整链接及 serverinfo 对比 | 通过（模拟） | 同一独立固定克隆以 `228dae5` 的 apply_sunshine.py 生成旧版并链接；相同模拟 probe、身份和配置，鼠标能力开/关两种情形，根属性及全部 21 字段实际值严格比较通过后才脱敏。含 RKMoonAuth、Display*、MouseModes、HttpsPort、PairStatus、编解码字段 |
+| 首次环境准备失败 | 已解决（保留历史） | 2026-11-11 复制的旧 vendor 是引用 `/work/...` 的 worktree，宿主 Git 返回128；当时停止，获继续授权后新建独立克隆，未修复或复用旧 worktree，未动本机 vendor |
+| 真实 HDMI、MPP 编码、USB、Windows 客户端 | 未测试 | 不属于阶段 1 验收，既有历史通过不代表本次新实现通过 |
+
+密码路径及格式见 README/SECURITY 的“服务端密码文件”；状态目录 `http-password`，本人所有、普通文件、0600。HTTP 每请求重新读取，保留原失败预算与输入加密。会话构造从旧 overlay 提取，保留 key/IV、音频参数、corever 与鼠标模式、独占/cancel 路径；没有重写 RTSP/RTP/FEC。
+
+脱敏比较与摘要：`private/results/local/adr014/serverinfo-comparison.json`、`STATUS.md`。完整构建/测试日志及新旧二进制保存在 VM301 `/root/artifacts/rk-kvm-adr014-20261111/resume-20261112/`，不将真实请求、密码或查询写入日志。

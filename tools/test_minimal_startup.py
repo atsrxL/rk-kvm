@@ -6,6 +6,7 @@ Run in a task-owned network namespace/container, unprivileged except --root-refu
 """
 import argparse
 import base64
+import json
 import http.client
 import xml.etree.ElementTree as ET
 import os
@@ -59,6 +60,8 @@ socket.socket(fileno=3).sendall(b)
         assert r.returncode==1 and 'asset missing' in r.stderr
         shutil.rmtree(missing)
         print('missing_assets_refused=pass')
+        password_file=state/'http-password'
+        password_file.write_text('kvm\n');password_file.chmod(0o600)
         log=out/'synthetic-host-startup.log'
         with log.open('w') as logfile:
             process=subprocess.Popen([str(binary),str(config)],cwd='/tmp',env=env,stdout=logfile,stderr=subprocess.STDOUT)
@@ -105,10 +108,34 @@ socket.socket(fileno=3).sendall(b)
                 tree = ET.fromstring(body)
                 assert tree.attrib["status_code"] == "200" and tree.findtext("PairStatus") == "1"
                 host_uuid = tree.findtext("uniqueid")
+                summary={node.tag:node.text for node in tree}
+                for name in ('uniqueid','LocalIP','ExternalIP'):
+                    if name in summary:summary[name]='REDACTED'
+                (out/'serverinfo-fields.json').write_text(json.dumps(summary,sort_keys=True,indent=2)+'\n')
                 assert tree.findtext("RKMoonAuth") == "password-http-v1" and tree.findtext("HttpsPort") == "0"
                 assert not list(state.rglob("*.pem")), "HTTP-only startup generated TLS files"
                 status, body = request("/applist", "kvm:kvm")
                 assert ET.fromstring(body).attrib["status_code"] == "200"
+                duplicate=http.client.HTTPConnection('127.0.0.1',47989,timeout=3)
+                try:
+                    duplicate.putrequest('GET','/serverinfo')
+                    duplicate.putheader('Authorization','Basic '+base64.b64encode(b'kvm:kvm').decode())
+                    duplicate.putheader('authorization','Basic '+base64.b64encode(b'kvm:kvm').decode())
+                    duplicate.endheaders()
+                    assert ET.fromstring(duplicate.getresponse().read()).attrib['status_code']=='401'
+                finally:duplicate.close()
+                # Every route reauthenticates after a live password replacement.
+                password_file.write_text('other\n')
+                for path in ("serverinfo", "applist", "appasset", "launch", "resume", "cancel"):
+                    status, body = request("/"+path, "kvm:kvm")
+                    assert ET.fromstring(body).attrib["status_code"] == "401"
+                time.sleep(2) # replenish global failure budget
+                status, body = request("/serverinfo", "kvm:other")
+                assert ET.fromstring(body).attrib["status_code"] == "200"
+                password_file.write_text('kvm\n')
+                status, body = request("/serverinfo?sentinel=SYNTHETIC_QUERY_SECRET", "kvm:kvm")
+                assert ET.fromstring(body).attrib["status_code"] == "200"
+                print("live_password_rotation=pass old_rejected_new_accepted")
                 print("password_http_auth=pass synthetic_no_stream")
                 assert (xdg/'sunshine/apps.json').exists()
                 assert (xdg/'sunshine/sunshine.log').exists()
@@ -138,6 +165,8 @@ socket.socket(fileno=3).sendall(b)
                     except subprocess.TimeoutExpired:
                         process.kill();process.wait();raise
                     print(f'synthetic_host_shutdown_ms={int((time.monotonic()-start)*1000)} exit={process.returncode}')
+        for candidate in (log, xdg/'sunshine/sunshine.log'):
+            assert 'SYNTHETIC_QUERY_SECRET' not in candidate.read_text()
         assert not (state/'admin.sock').exists(), 'admin socket not released'
         print('admin_socket_cleanup=pass')
     print('synthetic_private_keys_state_deleted=true no_real_pairing_or_media')

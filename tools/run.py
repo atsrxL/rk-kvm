@@ -70,6 +70,25 @@ def prepare(c,state):
         if not p.exists():
             fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
             with os.fdopen(fd,'w') as f:f.write(text)
+    password = state/'http-password'
+    try:
+        fd=os.open(password,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    except FileExistsError:
+        pass
+    else:
+        with os.fdopen(fd,'w') as f:f.write('kvm\n')
+    fd=os.open(password,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o600:
+            raise Refused('password file must be owned regular file with mode 0600')
+        value=os.read(fd,258)
+        if value.endswith(b'\n'):value=value[:-1]
+        if not 1<=len(value)<=256 or any(c in value for c in (b'\n',b'\r',b'\0')):
+            raise Refused('invalid password file format')
+        try:value.decode('utf-8')
+        except UnicodeError:raise Refused('invalid password file format')
+    finally:os.close(fd)
     return envroot
 
 def proc_start(pid):

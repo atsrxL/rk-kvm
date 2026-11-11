@@ -1,6 +1,6 @@
 # ADR-014：只抽取 Sunshine 的串流与输入模块
 
-状态：规划（2026-11-11），未实施。行数与依赖来自对固定提交 `63d35f7` 的静态统计，未经编译验证。
+状态：阶段 1 完成（2026-11-12，离线/编译/模拟启动验收）；阶段 2/3/4 未实施。行数与依赖来自对固定提交 `63d35f7` 的静态统计；后续阶段的依赖裁剪仍未经编译验证。
 
 ## 问题
 
@@ -68,6 +68,8 @@
 每个阶段独立可回退，完成后更新 `docs/ACCEPTANCE.md` 与 `HANDOFF.md`，不合并推进。
 
 ### 阶段 1：替换 HTTP 与认证
+
+当前状态：完成。首次旧 worktree 路径环境失败后停止，获继续授权并新建上游独立克隆。VM301 ARM64/QEMU 完整链接、离线 CTest31/31、Python114项（2项缺内核fixture跳过）、专项与模拟启动通过；旧版由 `228dae5` overlay 在同一固定克隆生成并完整链接，两种鼠标能力配置下 serverinfo 根属性和21字段逐值一致。未实机测试。详见 ACCEPTANCE 与 `private/results/local/adr014/`。密码文件为状态目录 `http-password`，格式与权限见 README/SECURITY。
 
 - 新增 `sunshine/rkmoon_http.cpp` 取代 `nvhttp.cpp` 与 `httpcommon.cpp`，仍在现有 Sunshine 构建内编译。
 - 密码从状态目录下属主、0600 的文件读取，缺省为 `kvm`；`tools/run.py` 负责创建与权限检查。

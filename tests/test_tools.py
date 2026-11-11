@@ -70,6 +70,17 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             c=self.config();c['state_directory']=d;s=run.private_state(c);run.prepare(c,s)
             p=s/'sunshine.conf';p.write_text('custom local config');run.prepare(c,s);self.assertEqual(p.read_text(),'custom local config')
+    def test_password_file_created_preserved_and_permissions_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            c=self.config();c['state_directory']=d
+            state=run.private_state(c);run.prepare(c,state)
+            password=state/'http-password'
+            self.assertEqual(password.read_text(),'kvm\n')
+            self.assertEqual(password.stat().st_mode&0o777,0o600)
+            password.write_text('different\n');run.prepare(c,state)
+            self.assertEqual(password.read_text(),'different\n')
+            password.chmod(0o644)
+            with self.assertRaises(run.Refused):run.prepare(c,state)
     def test_private_dir_permissions(self):
         with tempfile.TemporaryDirectory() as d:
             os.chmod(d,0o755);c=self.config();c['state_directory']=d

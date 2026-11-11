@@ -37,7 +37,7 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/nvhttp.h", "src/video.h", "src/rtsp.h", "cmake/compile_definitions/linux.cmake"}:
+        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/video.h", "src/rtsp.h", "cmake/compile_definitions/linux.cmake"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
         if path=="src/video.h":
             anchor="    int enableIntraRefresh;  ///< Intra refresh setting: 0 = disabled, 1 = enabled.\n"
@@ -78,147 +78,6 @@ def make_changes(original):
         elif path=="src/audio.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
                 "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
-        elif path=="src/httpcommon.cpp":
-            text=at_entry(text, "  int init()",
-                "    if (rkmoon_sunshine::enabled()) { unique_id = uuid_util::uuid_t::generate().string(); return 0; } // HTTP-only: no TLS credentials needed.\n")
-            text=once(text,'      BOOST_LOG(info) << "Open the Web UI to set your new username and password and getting started";',
-                '      BOOST_LOG(info) << "RKMoon IP/password authentication over HTTPS; no Web UI";')
-        elif path=="src/nvhttp.h":
-            text=once(text,"#include <string_view>\n", "#include <string_view>\n#include <stop_token>\n")
-            text=once(text,"  bool pin(std::string_view pairing_id, std::string pin, std::string name);",
-                "  bool pin(std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop = {});")
-        elif path=="src/nvhttp.cpp":
-            for prefix in ("auto","const auto"):
-                anchor="    "+prefix+" launch_session = make_launch_session(host_audio, args);"
-                text=once(text,anchor,'''    const auto rkmoon_mode = rkmoon_sunshine::mouse_mode(args);
-    if (!rkmoon_mode.has_value()) {
-      tree.put("root.resume", 0);
-      tree.put("root.<xmlattr>.status_code", 400);
-      tree.put("root.<xmlattr>.status_message", "Unsupported RKMoon mouse mode");
-      return;
-    }
-'''+anchor+'\n    launch_session->rkmoon_absolute_mouse = *rkmoon_mode;')
-            text=once(text, '// local includes\n', '// local includes\n#include "src/rkmoon/rkmoon_display.hpp"\n')
-            text=once(text, '    tree.put("root.PairStatus", pair_status);', '    rkmoon_sunshine::put_display_info(tree);\n    tree.put("root.PairStatus", pair_status);')
-            text=at_entry(text,"  void print_req(std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request)",
-                '    if (rkmoon_sunshine::enabled()) { BOOST_LOG(debug) << "RKMoon GameStream request (content redacted)"; return; }\n')
-            text=once(text,'    BOOST_LOG(debug) << sess.client.cert;',
-                '    BOOST_LOG(debug) << "RKMoon pairing certificate received (redacted)";')
-            text=once(text,'        BOOST_LOG(debug) << subject_name << " -- "sv << (verified ? "verified"sv : "denied"sv);',
-                '        BOOST_LOG(debug) << "Client certificate " << (verified ? "verified"sv : "denied"sv);')
-            text=once(text,"  bool pin(const std::string_view pairing_id, std::string pin, std::string name) {",
-                "  bool pin(const std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop) {")
-            text=once(text,"completion_deadline = std::min(sess.async_insert_pin.expires_at, now + config::stream.ping_timeout);",
-                "completion_deadline = std::min({sess.async_insert_pin.expires_at, now + config::stream.ping_timeout, now + std::chrono::seconds(30)});")
-            text=once(text,"""      if (completion->condition.wait_until(lock, completion_deadline, [&completion]() {
-            return completion->result.has_value();
-          })) {
-        return *completion->result;
-      }
-""","""      // Bounded wait so SIGTERM cannot stall the admin socket worker for
-      // an operator-configured multi-minute ping_timeout.
-      while (!stop.stop_requested() && std::chrono::steady_clock::now() < completion_deadline) {
-        if (completion->condition.wait_until(lock, std::min(completion_deadline,
-              std::chrono::steady_clock::now() + std::chrono::milliseconds(100)), [&completion]() {
-              return completion->result.has_value();
-            })) return *completion->result;
-      }
-""")
-            # Replace enrollment with per-request password authentication.
-            # Pairing used to persist the freshly generated identity. Password mode
-            # must persist it at startup or every restart breaks the client binding.
-            text=once(text, "    // Verify certificates after establishing connection\n", "    // Password authentication replaces client certificate enrollment.\n")
-            text=once(text, "    if (!clean_slate) {\n      load_state();\n    }",
-                "    if (!clean_slate) {\n      load_state();\n      if (!fs::exists(config::nvhttp.file_state)) save_state();\n    }")
-            text=once(text, "// local includes\n", "// local includes\n#include \"src/rkmoon/rkmoon_password.hpp\"\n")
-            text=once(text, """    https_server.verify = [](SSL *ssl) {
-      crypto::x509_t x509 {
-#if OPENSSL_VERSION_MAJOR >= 3
-        SSL_get1_peer_certificate(ssl)
-#else
-        SSL_get_peer_certificate(ssl)
-#endif
-      };
-      if (!x509) {
-        BOOST_LOG(info) << "unknown -- denied"sv;
-        return 0;
-      }
-
-      int verified = 0;
-
-      auto fg = util::fail_guard([&]() {
-        char subject_name[256];
-
-        X509_NAME_oneline(X509_get_subject_name(x509.get()), subject_name, sizeof(subject_name));
-
-        BOOST_LOG(debug) << "Client certificate " << (verified ? "verified"sv : "denied"sv);
-      });
-
-      std::lock_guard lock {client_auth_mutex()};
-      auto err_str = verify_client_certificate(x509.get());
-      if (err_str) {
-        BOOST_LOG(warning) << "SSL Verification error :: "sv << err_str;
-
-        return verified;
-      }
-
-      // Check if this client is enabled
-      auto pem = crypto::pem(x509);
-      auto [enabled, client_name] = get_client_status(pem);
-      if (!enabled) {
-        BOOST_LOG(info) << "Client is disabled -- denied"sv;
-        return verified;
-      }
-
-      last_verified_client_cert = pem;
-      last_verified_client_name = client_name;
-      verified = 1;
-
-      return verified;
-    };
-
-""", '')
-            text=once(text, "    https_server.resource[\"^/pair$\"][\"GET\"] = [](auto resp, auto req) {\n      pair<SunshineHTTPS>(resp, req);\n    };", '')
-            text=once(text, "    http_server.resource[\"^/pair$\"][\"GET\"] = [](auto resp, auto req) {\n      pair<SimpleWeb::HTTP>(resp, req);\n    };", '')
-            text=once(text, '    tree.put("root.PairStatus", pair_status);', "    tree.put(\"root.RKMoonAuth\", \"password-v1\");\n    tree.put(\"root.PairStatus\", std::is_same_v<SunshineHTTPS, T> ? 1 : 0);")
-            text=once(text, '    https_server.config.reuse_address = true;', r"""    // Authenticate every HTTPS request, including keep-alive requests.
-    rkmoon_sunshine::password_auth password;
-    for (auto &[path, methods] : https_server.resource) {
-      for (auto &[method, handler] : methods) {
-        handler = [&password, next = handler](auto response, auto request) {
-          const auto range = request->header.equal_range("Authorization");
-          const bool single = range.first != range.second && std::next(range.first) == range.second;
-          if (!password.authorize(single ? std::string_view(range.first->second) : std::string_view{})) {
-            response->write("<root status_code=\"401\" status_message=\"Password authentication failed\"/>");
-            response->close_connection_after_response = true;
-            return;
-          }
-          next(response, request);
-        };
-      }
-    }
-
-""" + '    https_server.config.reuse_address = true;')
-            # User-requested plain HTTP transport, with every route password gated.
-            text=once(text, '    // Password authentication replaces client certificate enrollment.\n    https_server.on_verify_failed = [](resp_https_t resp, req_https_t req) {\n      pt::ptree tree;\n      auto g = util::fail_guard([&]() {\n        std::ostringstream data;\n\n        pt::write_xml(data, tree);\n        resp->write(data.str());\n        resp->close_connection_after_response = true;\n      });\n\n      tree.put("root.<xmlattr>.status_code"s, 401);\n      tree.put("root.<xmlattr>.query"s, req->path);\n      tree.put("root.<xmlattr>.status_message"s, "The client is not authorized. Certificate verification failed."s);\n    };\n\n', '')
-            text=once(text, '    auto pkey = file_handler::read_file(config::nvhttp.pkey.c_str());\n    auto cert = file_handler::read_file(config::nvhttp.cert.c_str());\n    setup(pkey, cert);\n', '')
-            text=once(text, '    https_server_t https_server {config::nvhttp.cert, config::nvhttp.pkey};\n', '')
-            text=once(text, '    https_server.config.reuse_address = true;\n    https_server.config.address = net::get_bind_address(address_family);\n    https_server.config.port = port_https;\n\n    http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;\n    http_server.resource["^/serverinfo$"]["GET"] = serverinfo<SimpleWeb::HTTP>;\n', '')
-            text=once(text, '    std::jthread ssl {accept_and_run, &https_server};\n', '')
-            text=once(text, '    https_server.stop();\n', '')
-            text=once(text, '    ssl.join();\n', '')
-            text=once(text, '    tree.put("root.HttpsPort", net::map_port(PORT_HTTPS));', '    tree.put("root.HttpsPort", 0);')
-            text=once(text, '    tree.put("root.RKMoonAuth", "password-v1");', '    tree.put("root.RKMoonAuth", "password-http-v1");')
-            text=once(text, '    tree.put("root.PairStatus", std::is_same_v<SunshineHTTPS, T> ? 1 : 0);', '    tree.put("root.PairStatus", 1);')
-            text=once(text, '  using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Response>;', '  using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Response>;')
-            text=once(text, '  using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Request>;', '  using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Request>;')
-            if text.count("https_server.") != 8: raise PatchError("HTTP route migration count changed")
-            text=text.replace("https_server.", "http_server.")
-            if text.count("print_req<SunshineHTTPS>(request);") != 5: raise PatchError("HTTP handler migration count changed")
-            text=text.replace("print_req<SunshineHTTPS>(request);", "print_req<SimpleWeb::HTTP>(request);")
-            text=once(text, "= not_found<SunshineHTTPS>;", "= not_found<SimpleWeb::HTTP>;")
-            text=once(text, "= serverinfo<SunshineHTTPS>;", "= serverinfo<SimpleWeb::HTTP>;")
-            text=once(text, "// Authenticate every HTTPS request", "// Authenticate every HTTP request")
         elif path=="src/stream.cpp":
             text=once(text,'        << util::hex_vec(payload) << std::endl',
                 '        << "[RKMoon control payload redacted]" << std::endl')
@@ -274,8 +133,11 @@ def make_changes(original):
 list(REMOVE_ITEM SUNSHINE_TARGET_FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/confighttp.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/upnp.cpp")
-list(APPEND SUNSHINE_TARGET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_main.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/upnp.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/nvhttp.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/httpcommon.cpp")
+list(APPEND SUNSHINE_TARGET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_http.cpp")
 # target definitions
 ''')
             text+='''
@@ -307,7 +169,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src_assets/common/assets/box.png"
         changes[path]=text
     return changes
 
-FILES=["src/video.h","src/rtsp.h","src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/httpcommon.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
+FILES=["src/video.h","src/rtsp.h","src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
@@ -333,7 +195,7 @@ def main():
         stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
         try:
             payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_audio_pcm.hpp","rkmoon_password.hpp","rkmoon_display.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
+            for name in ("rkmoon_http.cpp","rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_audio_pcm.hpp","rkmoon_password.hpp","rkmoon_display.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
             shutil.copy2(ROOT/"config/hdmi-apps.json",payload/"hdmi-apps.json")
             shutil.copytree(ROOT/"include",payload/"include")

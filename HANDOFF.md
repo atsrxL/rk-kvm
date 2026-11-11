@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 2026-11-12 ADR-014 阶段 1 完成：自有六路由 HTTP、可热更的私有密码文件及稳定身份。VM301 ARM64/QEMU 完整链接、离线 CTest31/31 + Python114项（2跳过）、专项与模拟启动通过；新旧 serverinfo 两种鼠标能力下21字段逐值一致。首次 worktree 环境失败后获授权以全新克隆完成。未访问 T6，未交付 Windows，阶段2/3/4未实施。见 [验收表](docs/ACCEPTANCE.md)。
+
 > 2026-11-11 规划：服务端改为只抽取 Sunshine 的串流、握手与输入解包，其余（HTTP/认证、编码框架、配置、平台层）由本仓库薄实现替换，分四阶段，尚未实施。见 [ADR-014](docs/ADR-014-sunshine-extraction.md)。
 
 > 2026-09-25 最新：服务端发布 20260925-r10 已安装到 T6。无 HDMI 信号时，会话以 MPP 硬件编码的黑屏占位启动，键鼠照常可用（见 [ADR-011](docs/ADR-011-no-signal-session.md)）。worker 占位模式已在实机验证。客户端改为 Connect 后只显示并刷新服务端信息，按钮 View HDMI 改名为 Start，无信号时也能启动；这部分目前只通过了 Mac 离线测试，Windows 构建交付由子代理进行。

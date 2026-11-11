@@ -11,3 +11,5 @@
 Windows客户端按sshh的VM200固定快照→独立9xxx克隆→QGA临时SSH租约→原生编译测试→Target SMB校验交付→关机/租约关闭/24小时销毁guard流程构建。不得以macOS测试代替Windows产物。
 
 旧ADR-004与results/20260924-password记录属于先前HTTPS实现，不作为本版验收。新记录见 results/20260924-http-password/STATUS.md。
+
+2026-11-12（ADR-014 阶段 1）：服务端密码可从状态目录 `http-password` 热更新，文件属主须为启动用户、权限0600；默认仍为 `kvm`。格式和操作约定见 [SECURITY](SECURITY.md#服务端密码文件adr-014-阶段-1)。本项仅完成离线/编译/模拟验收，未更新 T6 或 Windows 客户端。

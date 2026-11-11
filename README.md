@@ -51,3 +51,9 @@ python3 tools/apply_sunshine.py vendor/sunshine --apply
 ## Independent installation
 
 Client, server, worker and USB input deployment are maintained in this repository. The old VNC project is not a runtime dependency. See [independent installation](docs/INDEPENDENT-INSTALL.md) for pinned kvmd, dedicated services and exclusive hardware ownership.
+
+## 服务端密码文件（ADR-014 阶段 1）
+
+密码位于 runtime 配置 `state_directory` 下的 `http-password`（直接运行时为 `$HOME/http-password`）。格式为单行 UTF-8 明文，1–256 字节，可有一个末尾 LF；不允许 CR、内嵌 LF 或 NUL。默认值 `kvm`。文件须为启动用户本人所有的普通文件，权限恰为 0600；不接受符号链接。`tools/run.py prepare/start` 创建缺省文件并检查，权限错误时拒绝启动。编辑时保持上述权限，推荐以同目录 0600 临时文件原子替换；每个 HTTP 请求重新读取，改密码无需重启，旧密码立即失效。失败预算不会因改密码重置。直接运行且文件缺失时使用默认值。
+
+HTTP 控制请求没有 TLS 保护；密码及会话建立参数会通过 HTTP 传输。密码文件内容、Authorization 和查询参数均不得写入日志。新实现已通过 VM301 ARM64/QEMU 完整链接与隔离模拟启动验收，尚未部署到 T6 或完成真实客户端实测。
