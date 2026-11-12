@@ -254,3 +254,49 @@ python3 tools/test_rtsp_handshake.py --binary /evidence/new/rkmoon-kvm --output 
 ```
 
 两轮开发/最终ARM64构建及全部回归均通过，无失败验收被改标通过。证据：`private/results/local/adr014/stage3/`；完整日志、二进制、生成清单、依赖lib目录和夹具归档于VM301 `/root/artifacts/rk-kvm-adr014-20261111/stage3-complete/`。源码缓存按SSHH期限保留，不作为交付路径。
+
+
+## ADR-014 阶段4：T6服务端实机与占位会话（2026-11-12）
+
+**服务端已部署并保持运行；客户端验收待测试代理。** 用户授权安装/重启rkmoon和使用已有输入/采集；本轮未改EDID/CMA/内核/引导/网络/防火墙/USB/被控机或Znas，未重启采集池。
+
+| 项目 | 结果 | 实际证据与边界 |
+|---|---|---|
+| ARM64完整包 | 通过（VM301编译/打包） | 独立干净c99f217 checkout，ARM64/QEMU自有目标链接exit0，server SHA b2bdc550…与阶段3一致；package_server.py生成49文件、8个私有库的完整包，22,256,616字节。含worker/MPP/codec等现有组件，与当前r12逐SHA相同，不重编或加载codec |
+| 安装与回滚准备 | 通过（T6） | 安装`20261112-adr014-c99f217`，旧`20260928-r12`保留；安装器不加--start，随后只restart rkmoon.service，避免启动EDID/audio/pool流程。四个原unit/配置与身份基线留root私有备份；未触发回滚 |
+| 服务/日志/权限 | 通过（T6） | server实际UID1000；新实例启动和会话日志无Error/Fatal。旧实例退出时ASIO Operation canceled留在监督stdout，按新实例时间边界分开记录；setpriority权限不足、USB offline为预期警告，未提权。新发布保持active |
+| 密码文件/身份 | 通过（T6） | 升级前无文件；run.py自动创建`/var/lib/rkmoon/http-password`，普通文件、UID1000、0600。状态uniqueid前后相同，运行配置原字节不变；身份只保存脱敏校验值 |
+| LAN成功/拒绝响应 | 通过（VM301→T6） | serverinfo/applist根属性及全部嵌套字段逐值一致；本机20个serverinfo字段，未配置ExternalIP（此前21字段模拟包含该项）。错误密码新旧均HTTP200，XML root status_code=401和status_message等属性完全一致 |
+| 池/其他服务 | 通过（T6状态） | capture-pool始终PID568，ExecMainStartTimestamp及ActiveEnterTimestamp与基线完全相同；没有restart或重新分配池。旧发布及其组件不删除 |
+| HDMI独立3秒采集 | 条件未满足 | 先后均no_signal、尺寸/帧率0，无活动worker；按授权记录无信号，未打开V4L2或宣称池化HDMI采集/解码通过 |
+| 无信号占位真实会话 | 通过（真实T6→VM301网络） | 固定moonlight-common-c最小接收器发起launch，完成RTSP/控制/媒体握手；T6日志确认ADR-011 MPP硬编黑帧占位、约10fps。5秒收到52帧H264/63,706字节，VM301 ffmpeg解码exit0、ffprobe确认1920×1080/52帧。不是合成worker/软件视频编码或真实HDMI图像 |
+| 音频网络/解码 | 通过（无信号静音） | 同会话收到760个Opus包，成功解码182,400样本/声道、解码错误0；服务端检测HDMI音频空闲后发静音。未验证真实有声/主观听感/音画同步 |
+| USB offline隔离 | 通过（拒绝行为） | 现有kvmd /hid报告enabled但键鼠offline；新桥明确拒绝租约、server未出现lease acquired，视频仍52帧到达。另以同UID hello实测返回ok=false；没有恢复USB或向目标发送测试按键 |
+| 会话清理/交接 | 通过（T6/VM301） | receiver正常退出、HTTP cancel成功、currentgame0/SUNSHINE_SERVER_FREE；T6无worker，未成功持有HID租约，无release失败。新发布继续运行供客户端代理接测 |
+| Windows/真实端到端 | 待测试代理 | HEVC/H264真实画面、声音/同步、相对/绝对鼠标、键盘、快捷键、断线重连/resume、加密RTSP和无信号后信号恢复；本轮不标通过，不交付Windows包 |
+
+发布名：`20261112-adr014-c99f217`；完整归档SHA256：`290a7ec7b84b101957acb1be0d96d7b716a159e98ad208462405146c42291332`。完整包私有库数由当前r12的71降至8；此处包含C++/GCC运行库及MPP，和阶段3仅服务端闭包17→5的统计口径不同。
+
+执行命令/位置：
+
+```bash
+# MS-A2 VM301，ARM64/QEMU；固定c99f217源码，复用阶段3构建缓存
+RKMOON_BUILD_ROOT=/work/build JOBS=8 tools/build.sh sunshine \
+  -DRKMOON_SUNSHINE_SOURCE=/upstream -DRKMOON_BOOST_SOURCE=/deps/boost-src
+python3 tools/package_server.py --server /server/rkmoon-kvm --assets /server/assets \
+  --worker /components/bin/rkmoon-worker --mpp-lib /components/lib/librockchip_mpp.so.1 \
+  --runtime-libs /components/lib --codec-ko /components/kernel/rkmoon_hdmirx_codec.ko \
+  --licenses /licenses --output /output --version 20261112-adr014-c99f217
+# T6 root：已有安装器验证包、保留旧发布；专用服务继续以at运行
+python3 /opt/rkmoon/releases/20260928-r12/tools/install_server.py --release PACKAGE.tar.gz --user at
+systemctl restart rkmoon.service
+# VM301：私有最小moonlight-common-c接收器，仅读取内存管道中的临时会话密钥
+cmake -S /client -B /client/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build /client/build -j8
+python3 /session.py /evidence
+ffmpeg -hide_banner -v error -i placeholder.h264 -f null -
+```
+
+首次停止原因是部署前工具错误地断言HTTP401；监督员确认应检查XML401后，修正工具并重新抓基线，保留首次失败证据。新版无需代码修改；本轮后续构建/打包/实机验证均通过。无信号与USB offline按最新授权作为环境状态记录。
+
+证据：`private/results/local/adr014/stage4-resume/`；VM301完整包/日志/接收器与源码归档于`/root/artifacts/rk-kvm-adr014-20261112/stage4-complete/`。T6基线及回滚资料为`/root/agent.backup/rkmoon-adr014-stage4-20261112/`，仅root可读；原`20260928-r12`可按DEPLOY-ROLLBACK/SERVER-INSTALL的--activate流程恢复。

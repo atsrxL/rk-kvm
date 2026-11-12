@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 2026-11-12 ADR-014 阶段4服务端实机检查完成：T6运行 `20261112-adr014-c99f217`，回滚目标 `20260928-r12` 保留。密码0600自动创建、身份/配置未变、LAN全部字段及HTTP200/XML401拒绝形式与旧版一致；采集池PID568及启动时间不变。无HDMI、USB offline；真实moonlight-common-c会话收到52帧MPP占位H264并独立解码、760个Opus包解码通过，HID拒绝租约而视频继续。会话已cancel/FREE，无worker/成功HID租约占用，新发布保持运行；Windows、真实源/USB、HEVC及加密RTSP/resume待客户端测试代理。见 [验收表](docs/ACCEPTANCE.md)。
+
 > 2026-11-12 ADR-014 阶段3完成：自有平台/输入替身，移除 misc、libvirtualhid、GIO/GLib/GObject、libevdev、libcap、lizardbyte-common。VM301 ARM64/QEMU完整链接；CTest31/31、Python113项（2跳过，其余通过）、启动/密码/音频6场景/输入双模式/21字段及合成OPTIONS/DESCRIBE通过。NEEDED11→7，服务端打包私有库闭包17→5；非完整设备发布包。未访问T6，阶段4、resume、加密RTSP及完整媒体握手仍未覆盖。见 [验收表](docs/ACCEPTANCE.md)。
 
 > 2026-11-12 ADR-014 阶段2完成：自有 RKMOON_SERVER 目标/只读固定源码子集/模块替身，旧 Sunshine CMake 与就地 overlay 退役。VM301 ARM64/QEMU 完整链接、CTest31/31、Python115项（2跳过）、密码启动/音频6场景/21字段对比通过；合成 launch→OPTIONS/DESCRIBE 返回200，未走媒体/加密RTSP/resume。NEEDED14→11，NEEDED+ldd无FFmpeg/curl/miniupnpc/pulse/EGL/GL；阶段3/4未做，未访问T6。见 [验收表](docs/ACCEPTANCE.md)。

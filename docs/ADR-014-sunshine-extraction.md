@@ -1,6 +1,6 @@
 # ADR-014：只抽取 Sunshine 的串流与输入模块
 
-状态：阶段1/2/3完成（2026-11-12，离线/ARM64编译/有限模拟验收）；阶段4未实施，真实媒体/USB输入及客户端仍需独立验收。
+状态：阶段1/2/3完成；阶段4服务端实机与无信号占位网络会话检查完成（2026-11-12），Windows客户端、真实HDMI/USB输入等验收仍待测试代理执行。
 
 ## 问题
 
@@ -96,6 +96,8 @@
 - 完成标准：`apply_sunshine.py` 只剩 `stream.cpp`、`rtsp.cpp`、`input.cpp`、`thread_safe.h`、`logging.cpp` 的修改；发布包 `lib/` 中的私有库数量下降并记录前后对比。
 
 ### 阶段 4：实机验收
+
+当前状态：服务端检查完成（2026-11-12），客户端未完成。T6新发布`20261112-adr014-c99f217`保持运行，旧`20260928-r12`保留；包SHA256 `290a7ec7b84b101957acb1be0d96d7b716a159e98ad208462405146c42291332`。复用旧发布同SHA的worker/MPP/codec，新server为c99f217；身份、配置、采集池PID/启动时间不变，密码自动0600创建。LAN成功响应20字段（未配置ExternalIP）及错误密码HTTP200/XML401属性与旧版全等。无HDMI信号和USB offline是当前环境，未改设备状态；真实moonlight-common-c完成明文RTSP/控制/媒体握手，5秒MPP占位会话52帧H264独立解码、760个Opus包解码通过；HID拒绝租约而视频继续。已cancel并确认FREE、无worker/成功输入租约。Windows、真实源/USB、有声听感、HEVC、加密RTSP与resume等仍待独立测试，不能将本轮占位会话作为这些项目通过。详见ACCEPTANCE。
 
 - T6 上按 `docs/SERVER-INSTALL.md` 安装新发布，旧发布保留用于回滚。
 - Windows 客户端验证：连接、1080p60 HEVC/H264、音频、相对与绝对鼠标、键盘、断线重连、无信号占位会话。
